@@ -1,0 +1,23 @@
+#!/bin/bash -f
+
+#SBATCH -p cpu
+#SBATCH -J SPECEXBIN
+#SBATCH --nodes=1
+#SBATCH -o ./out-%j-%N
+#SBATCH -e ./err-%j-%N
+#SBATCH --time=48:00:00
+
+echo '=====================JOB DIAGNOTICS========================'
+date
+echo -n 'Launch host: ';hostname
+echo -n 'JOBID: '; echo $SLURM_JOBID
+echo -n 'JOBNODES: '; echo $SLURM_JOB_NODELIST
+echo -n 'JOBFILE_PATH: '; echo $JOBFILE_PATH
+echo -n 'PATH: '; echo $PATH
+echo -n 'LD_LIBRARY_PATH: '; echo $LD_LIBRARY_PATH
+echo -n 'LMOD INFO: '; (module list)2>&1
+echo "=============STARTING JOB============================="
+
+export MYDIR=/home/shuiyao_umass_edu/specexbin/specexbin-phew/SCRIPT/
+cd $MYDIR
+bash l25n288-phew-m5-spl_20-30.sh

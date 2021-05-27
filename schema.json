@@ -1,0 +1,153 @@
+{
+    "sovcirc":
+    {
+	"columns": ["haloId", "Mvir", "Rvir", "R_vmax", "Vmax",
+		    "Npart", "Msub", "Rsub"],
+	"dtypes": {
+	    "haloId": "int32",
+	    "Mvir": "float32",
+	    "Rvir": "float32",
+	    "R_vmax": "float32",
+	    "Vmax": "float32",
+	    "Npart": "int64",
+	    "Msub": "float32",
+	    "Rsub": "float32"
+	}
+    },
+    "sogrp":
+    {
+	"columns": ["haloId"],
+	"dtypes": {"haloId":"int32"}
+    },
+    "stat":
+    {
+	"columns": ["galId", "Npart", "Mtot", "Mgas", "Mstar",
+		    "Vc_max", "Vc_half", "Vc_rmax", "R_vmax", "R_half",
+		    "R_max", "sigma1d", "x", "y", "z",
+		    "vx", "vy", "vz", "xbound", "ybound",
+		    "zbound", "Sfr"],
+	"dtypes": {
+	    "galId": "int32",
+	    "Npart": "int32",
+	    "Mtot": "float32",
+	    "Mgas": "float32",
+	    "Mstar": "float32",
+	    "Vc_max": "float32",
+	    "Vc_half": "float32",
+	    "Vc_rmax": "float32",
+	    "R_vmax": "float32",
+	    "R_half": "float32",
+	    "R_max": "float32",
+	    "sigma1d": "float32",
+	    "x": "float32",
+	    "y": "float32",
+	    "z": "float32",
+	    "vx": "float32",
+	    "vy": "float32",
+	    "vz": "float32",
+	    "xbound": "float32",
+	    "ybound": "float32",
+	    "zbound": "float32",
+	    "Sfr": "float32"
+	}
+    },
+    "grp":
+    {
+	"columns": ["galId"],
+	"dtypes": {"galId":"int32"}
+    },
+    "initwinds":
+    {
+	"columns": ["atime", "PhEWKey", "Mass", "Vinit", "Mstar",
+		    "rho_a", "T_a", "rho_c", "R_c", "L_c",
+		    "Z_c", "Sfr", "tclock", "tscale", "x",
+		    "y", "z", "MinPotID", "PID"],
+	"dtypes": {
+	    "atime": "float32",
+	    "PhEWKey": "int64",
+	    "Mass": "float32",
+	    "Vinit": "float32",
+	    "Mstar": "float32",
+	    "rho_a": "float32",
+	    "T_a": "float32",
+	    "rho_c": "float32",
+	    "R_c": "float32",
+	    "L_c": "float32",
+	    "Z_c": "float32",
+	    "Sfr": "float32",
+	    "tclock": "float32",
+	    "tscale": "float32",
+	    "x": "float32",
+	    "y": "float32",
+	    "z": "float32",
+	    "MinPotID": "int64",	    
+	    "PID": "int64"
+	}
+    },
+    "rejoin":
+    {
+	"columns": ["atime", "PhEWKey", "Mass", "tclock", "Vinit",
+		    "vrel", "cs_a", "T_c", "T_a", "rho_c",
+		    "rho_a", "R_c", "L_c", "Z_c", "M_c",
+		    "flag"],
+	"dtypes": {
+	    "atime": "float32",
+	    "PhEWKey": "int64",
+	    "Mass": "float32",
+	    "tclock": "float32",
+	    "Vinit": "float32",
+	    "vrel": "float32",
+	    "cs_a": "float32",
+	    "T_c": "float32",
+	    "T_a": "float32",
+	    "rho_c": "float32",
+	    "rho_a": "float32",
+	    "R_c": "float32",
+	    "L_c": "float32",
+	    "Z_c": "float32",
+	    "M_c": "float32",
+	    "flag": "int32"
+	}
+    },
+    "phews":
+    {
+	"columns": ["atime", "PhEWKey", "wind_flag", "Mass", "M_c",
+		    "vrel", "Mach", "Mstar", "dr", "dv",
+		    "T_c", "T_a", "rho_c", "rho_a", "R_c",
+		    "L_c", "Hsml", "Z_c", "Z_a", "f_dis",
+		    "acc", "a_grav", "dtime", "tscale", "t_dis",
+		    "t_evap", "t_khi", "dUram", "dUmix", "dWork"],
+	"dtypes": {
+	    "atime": "float32",
+	    "PhEWKey": "int64",
+	    "wind_flag": "int32",
+	    "Mass": "float32",
+	    "M_c": "float32",
+	    "vrel": "float32",
+	    "Mach": "float32",
+	    "Mstar": "float32",
+	    "dr": "float32",
+	    "dv": "float32",
+	    "T_c": "float32",
+	    "T_a": "float32",
+	    "rho_c": "float32",
+	    "rho_a": "float32",
+	    "R_c": "float32",
+	    "L_c": "float32",
+	    "Hsml": "float32",
+	    "Z_c": "float32",
+	    "Z_a": "float32",
+	    "f_dis": "float32",
+	    "acc": "float32",
+	    "a_grav": "float32",
+	    "dtime": "float32",
+	    "tscale": "float32",
+	    "t_dis": "float32",	    
+	    "t_evap": "float32",
+	    "t_khi": "float32",
+	    "dUram": "float32",
+	    "dUmix": "float32",
+	    "dWork": "float32"
+	}
+    }
+}
