@@ -23,6 +23,7 @@ PATHS = cfg['Paths']
 class Snapshot(object):
     def __init__(self, model, snapnum):
         self._model = model
+        self._snapnum = snapnum
         self._path_model = os.path.join(PATHS['data'], model)
         self._path_hdf5 = os.path.join(self._path_model, "snapshot_{:03d}.hdf5".format(snapnum))
         self._path_workdir = os.path.join(PATHS['workdir'], model)
@@ -56,14 +57,23 @@ class Snapshot(object):
         self.sp = None
         self.gals = None
         self.halos = None
+        self._n_gals = None
 
         self._boxsize_in_cm = self._boxsize * float(cfg['Units']['UnitLength_in_cm'])
         self._units_tipsy = units.Units('tipsy', lbox_in_mpc = self._boxsize_in_cm / ac.mpc)
         self._units_gizmo = units.Units('gadget')
 
+    @classmethod
+    def from_file(path_hdf5):
+        '''
+        Create an Snapshot instance directly from the HDF5 file.
+        '''
+        pass
+
     def _get_fields_todo(self, fields, fields_exist=set()):
         if(isinstance(fields, list)): fields = set(fields)
         fields_derived = fields & set(cfg['Derived'])
+        fields_derived = fields_derived ^ (fields_derived & fields_exist)
         # Need to load all the dependencies of the derived fields
         for field in fields_derived:
             fields_temp = set(cfg['Derived'][field].split(sep=','))
@@ -83,6 +93,8 @@ class Snapshot(object):
                 'todrop':fields_todrop}
 
     def load_gas_particles(self, fields, drop=True):
+        '''
+        '''
         if(isinstance(fields, str)): fields = [fields]
         if(isinstance(fields, list)): fields = set(fields)
         fields_exist = set() if self.gp is None else set(self.gp.columns)
@@ -94,24 +106,50 @@ class Snapshot(object):
         self._compute_derived_fields(fields['derived'])
         
         # Field Type: Galaxy/Halo Identifiers
-        if('galId' in fields):
+        if('galId' in fields['all']):
             gids = galaxy.read_grp(self._path_grp, n_gas=self._n_gas, gas_only=True)
             self.gp = pd.concat([self.gp, gids], axis=1)
-        if('haloId' in fields):
+        if('haloId' in fields['all']):
             hids = galaxy.read_sogrp(self._path_sogrp, n_gas=self._n_gas, gas_only=True)
             self.gp = pd.concat([self.gp, hids], axis=1)
 
     def load_star_particles(self, fields, drop=True):
-        self.sp = self._load_fields('star', fields, drop=drop)
+        '''
+        '''
+        if(isinstance(fields, str)): fields = [fields]
+        if(isinstance(fields, list)): fields = set(fields)
+        fields_exist = set() if self.sp is None else set(self.sp.columns)
+        fields = self._get_fields_todo(fields, fields_exist)
+        df = self._load_hdf5_fields('star', fields['hdf5'], fields['metals'])
+        if(drop == True and fields['todrop'] != set()):
+            self.sp.drop(fields['todrop'], axis=1, inplace=True)
+        self.sp = df if self.sp is None else pd.concat([self.sp, df], axis=1)
+        self._compute_derived_fields(fields['derived'])
+
         # Field Type: Galaxy/Halo Identifiers
-        if('galId' in fields):
+        if('galId' in fields['all']):
             gids = galaxy.read_grp(self._path_grp)
-            gids = gids.tail(self._n_star)
-            self.sp = pd.concat([self.sp, gids], axis=1)
-        if('haloId' in fields):
+            gids = gids.tail(int(self._n_star)).reset_index()
+            self.sp = pd.concat([self.sp, gids['galId']], axis=1)
+        if('haloId' in fields['all']):
             hids = galaxy.read_sogrp(self._path_sogrp)
-            hids = hids.tail(self._n_star)
-            self.sp = pd.concat([self.sp, hids], axis=1)
+            hids = hids.tail(int(self._n_star)).reset_index()
+            self.sp = pd.concat([self.sp, hids['haloId']], axis=1)
+
+    def load_dark_particles(self, force_reload=False):
+        '''
+        Unlike gas and stars, we mostly only care about the mass and the halo
+        info of dark matter particles.
+        '''
+        if(self.dp is not None and force_reload == False):
+            print("Dark particles already loaded. Use force_reload to reload.")
+            return
+        df = self._load_hdf5_fields('dark', ['PId'], [])
+        hids = galaxy.read_sogrp(self._path_sogrp)
+        hids = hids[self.ngas:self.ngas+self.ndark].reset_index()
+        # Use the haloId and not the parentId here.
+        # parentId has subsumed satellite galaxies
+        self.dp = pd.concat([df, hids['haloId']], axis=1)
 
     def _load_hdf5_fields(self, ptype, fields_hdf5, fields_metals):
         '''
@@ -166,8 +204,11 @@ class Snapshot(object):
             for field in self.gals.columns.intersection(set(['Mgal', 'Mgas', 'Mstar'])):
                 self.gals['log'+field] = np.log10(self.gals[field] * self._units_tipsy.m / ac.msolar)
                 self.gals.drop(field, axis=1, inplace=True)
+        self._n_gals = self.gals.shape[0]
+        print('Load {} galaxies ...'.format(self._n_gals))
 
     def load_halos(self, fields=None, log_mass=True):
+        print('Load halos ...')
         self.halos = galaxy.read_sovcirc(self._path_sovcirc)
         if(fields is not None):
             fields = set(fields)
@@ -180,26 +221,36 @@ class Snapshot(object):
             for field in self.halos.columns.intersection(set(['Mvir', 'Msub'])):
                 self.halos['log'+field] = np.log10(self.halos[field] / self._h)
                 self.halos.drop(field, axis=1, inplace=True)
+        self._n_gals = self.halos.shape[0]
+        print('Load {} halos ...'.format(self._n_gals))
 
     @property
+    def model(self):
+        return self._model
+                
+    @property
+    def snapnum(self):
+        return int(self._snapnum)
+                
+    @property
     def ngas(self):
-        return self._n_gas
+        return int(self._n_gas)
 
     @property
     def ndark(self):
-        return self._n_dark
+        return int(self._n_dark)
 
     @property
     def nstar(self):
-        return self._n_star
+        return int(self._n_star)
 
     @property
     def boxsize(self):
-        return self._boxsize
+        return float(self._boxsize)
 
     @property
     def redshift(self):
-        return self._redshift
+        return float(self._redshift)
 
     @property
     def ascale(self):
@@ -216,6 +267,13 @@ class Snapshot(object):
     @property
     def sp_keys(self):
         return self._sp_keys
+
+    @property
+    def ngals(self):
+        if(self._n_gals is not None):
+            return int(self._n_gals)
+        self.load_galaxies(log_mass=False)
+        return int(self._n_gals)
     
     
 '''

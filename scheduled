@@ -3,16 +3,11 @@ windsnap: visualization tool that can be good
 
 LAYOUT THE FUNCTIONS FIRST
 
-read_config
 analysis
-derive like temperature
-data structure
 use_dask
 
-C code integration
-plotlib
+plotlib, template
 
-CONFIG
 Metals to idx and solar values
 
 metals/metals.c: Solar values
@@ -21,5 +16,3 @@ generate_phase_diagram_table()
 load_phase_diagram_table()
 plot_phase_diagram(density, metallicity, ion, )
 
-MZR
-FGAS: gp by galaxy

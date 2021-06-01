@@ -37,6 +37,10 @@ def cumhist(arr, bins=10, weights=None, reverse=False):
     return array(cum), edges
     
 def load_default_schema():
+    '''
+    Load the default schemas for a couple of simulation outputs.
+    The default schemas are saved in a JSON file named "schema.json"
+    '''
     with open(path_schema) as json_data:
         schema = json.load(json_data)
     return schema

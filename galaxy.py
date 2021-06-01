@@ -20,7 +20,7 @@ def read_stat(path_stat, schema=DefaultSchema):
     return df
 
 def read_sogrp(path_sogrp, schema=DefaultSchema, n_gas=None, gheader=None, gas_only=False):
-    hids = pd.read_csv(path_sogrp, sep='\s+', skiprows=1,
+    hids = pd.read_csv(path_sogrp, skiprows=1,
                        names=schema['sogrp']['columns'],
                        dtype=schema['sogrp']['dtypes'])
     if(gas_only):
