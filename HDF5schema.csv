@@ -11,7 +11,7 @@ Hsml,SmoothingLength,FLOAT,float32,FloatType
 Sfr,StarFormationRate,FLOAT,float32,FloatType
 Tmax,TemperatureMax,FLOAT,float32,FloatType
 Age,StellarFormationTime,FLOAT,float32,FloatType
-Zmet,Metallicity,ARRAY<DOUBLE>,float32,ArrayType
+Metals,Metallicity,ARRAY<DOUBLE>,float32,ArrayType
 Mc,PhEWMcloud,FLOAT,float32,FloatType
 MinPotId,PhEWMinPotID,LONG,int64,LongType
 Mwind,PhEWWindMass,DOUBLE,float64,DoubleType

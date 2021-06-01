@@ -6,7 +6,7 @@ import configparser
 # Gadget Units in comoving c.g.s
 cfg = configparser.ConfigParser(inline_comment_prefixes=('#'))
 cfg.read('pygizmo.cfg')
-UNITS = cfg['UNITS']
+UNITS = cfg['Units']
 
 UNIT_GADGET_L = float(UNITS['UnitLength_in_cm'])
 UNIT_GADGET_M = float(UNITS['UnitMass_in_g'])
@@ -46,7 +46,7 @@ class Units(object):
     Parameters
     ----------
     system: string. Default: default
-      The unit system. Must be one of ['default', 'gadget', 'tipsy', 'cgs']
+      The unit system. Must be one of ['default', 'gadget'('gizmo'), 'tipsy', 'cgs']
     hubble_param: float. Default: 0.7
       The hubble constant of the Universe is hubble_param * 100 km/s/Mpc
     a: float. Default: 1.0
@@ -83,7 +83,7 @@ class Units(object):
             self.v = 1.0
             self.u = 1.0
             self.b = 1.0            
-        elif(system == 'gadget'):
+        elif(system == 'gadget' or system == 'gizmo'):
             self.l = UNIT_GADGET_L / hubble_param
             self.t = UNIT_GADGET_T / hubble_param
             self.m = UNIT_GADGET_M / hubble_param

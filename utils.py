@@ -3,8 +3,10 @@ General utilities.
 '''
 
 import json
+import os
+from config import cfg
 
-path_schema = "/home/shuiyao_umass_edu/Python/pygizmo/schema.json"
+path_schema = os.path.join(cfg['Paths']['pygizmo'], "schema.json")
 
 def cumhist(arr, bins=10, weights=None, reverse=False):
     '''

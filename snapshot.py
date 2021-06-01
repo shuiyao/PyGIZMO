@@ -4,7 +4,7 @@ The class Snapshot contains meta-data of a snapshot.
 
 import h5py
 import os
-import configparser
+import numpy as np
 import pandas as pd
 import pdb
 import galaxy
@@ -13,20 +13,21 @@ import warnings
 import units
 from astroconst import pc, ac
 
-cfg = configparser.ConfigParser(inline_comment_prefixes=('#'))
-cfg.read('pygizmo.cfg')
+import config
+cfg = config.cfg
+
 path_schema = "HDF5schema.csv"
 hdf5schema = pd.read_csv(path_schema, header=0).set_index('FieldName')
-PATHS = cfg['PATHS']
+PATHS = cfg['Paths']
 
 class Snapshot(object):
     def __init__(self, model, snapnum):
         self._model = model
-        self._path_model = os.path.join(PATHS['DATA'], model)
+        self._path_model = os.path.join(PATHS['data'], model)
         self._path_hdf5 = os.path.join(self._path_model, "snapshot_{:03d}.hdf5".format(snapnum))
-        self._path_output = os.path.join(PATHS['SCIDATA'], model)
-        if(not os.path.exists(self._path_output)):
-            os.mkdir(self._path_output)
+        self._path_workdir = os.path.join(PATHS['workdir'], model)
+        if(not os.path.exists(self._path_workdir)):
+            os.mkdir(self._path_workdir)
         self._path_grp = os.path.join(self._path_model, "gal_z{:03d}.grp".format(snapnum))
         self._path_stat = os.path.join(self._path_model, "gal_z{:03d}.stat".format(snapnum))
         self._path_sogrp = os.path.join(self._path_model, "so_z{:03d}.sogrp".format(snapnum))
@@ -49,68 +50,110 @@ class Snapshot(object):
             self._cosmology = {'Omega0':attrs['Omega0'],
                                'OmegaLambda':attrs['OmegaLambda'],
                                'HubbleParam':attrs['HubbleParam']}
+            self._h = self._cosmology['HubbleParam']
         self.gp = None
         self.dp = None
         self.sp = None
         self.gals = None
         self.halos = None
 
-        self._boxsize_in_cm = self._boxsize * float(cfg['UNITS']['unitlength_in_cm'])
+        self._boxsize_in_cm = self._boxsize * float(cfg['Units']['UnitLength_in_cm'])
         self._units_tipsy = units.Units('tipsy', lbox_in_mpc = self._boxsize_in_cm / ac.mpc)
-            
-    def load_gas_particles(self, fields, drop=True):
-        '''
-        Load fields of gas particles from various sources.
-        '''
-        # Only load fields that aren't already existed
-        try:
-            existed_fields = set(self.gp.columns)
-        except:
-            existed_fields = set()
-        fields = set(fields)
+        self._units_gizmo = units.Units('gadget')
 
-        if(drop):
-            # Drop fields that are not in 'fields'
-            drop_fields = existed_fields ^ (fields & existed_fields)
-            if(drop_fields != set()):
-                self.gp.drop(drop_fields, axis=1, inplace=True)
-
+    def _get_fields_todo(self, fields, fields_exist=set()):
+        if(isinstance(fields, list)): fields = set(fields)
+        fields_derived = fields & set(cfg['Derived'])
+        # Need to load all the dependencies of the derived fields
+        for field in fields_derived:
+            fields_temp = set(cfg['Derived'][field].split(sep=','))
+            fields = fields | fields_temp
+        fields_todrop = fields_exist ^ (fields & fields_exist)
         # Only keep the fields that is not existed
-        fields = fields ^ (fields & existed_fields)
+        fields = fields ^ (fields & fields_exist)
+        fields_hdf5 = hdf5schema.index.intersection(fields)
+        elements = cfg['Simulation']['elements'].split(sep=',')
+        fields_metals = fields & set(elements)
+        print("Fields to be derived: {}".format(fields_derived))
+        print("Fields to load: {}".format(fields))
+        return {'all':fields,
+                'hdf5':fields_hdf5,
+                'metals':fields_metals,
+                'derived':fields_derived,
+                'todrop':fields_todrop}
 
-        fields_hdf5 = fields & set(hdf5schema.index)
-        elements = cfg['SIMULATION']['elements'].split(sep=',')
-        fields_Zmet = fields & set(elements)
-
-        cols = {}
-        with h5py.File(self._path_hdf5, "r") as hf:
-            gp = hf['PartType0']
-            for field in fields_hdf5:
-                hdf5field = hdf5schema.loc[field].HDF5Field
-                dtype = hdf5schema.loc[field].PandasType
-                if(hdf5field not in gp):
-                    raise RuntimeError("{} is not found in the HDF5 file.".format(hdf5field))
-                cols[field] = gp[hdf5field][:].astype(dtype)
-            # Now extract the metal field
-            hdf5field = hdf5schema.loc['Zmet'].HDF5Field
-            dtype = hdf5schema.loc['Zmet'].PandasType
-            for field in fields_Zmet:
-                cols[field] = gp[hdf5field][:,elements.index(field)].astype(dtype)
-
-        if(self.gp is None):
-            self.gp = pd.DataFrame(cols)
-        else:
-            self.gp = pd.concat([self.gp, pd.DataFrame(cols)], axis=1)
-
+    def load_gas_particles(self, fields, drop=True):
+        if(isinstance(fields, str)): fields = [fields]
+        if(isinstance(fields, list)): fields = set(fields)
+        fields_exist = set() if self.gp is None else set(self.gp.columns)
+        fields = self._get_fields_todo(fields, fields_exist)
+        df = self._load_hdf5_fields('gas', fields['hdf5'], fields['metals'])
+        if(drop == True and fields['todrop'] != set()):
+            self.gp.drop(fields['todrop'], axis=1, inplace=True)
+        self.gp = df if self.gp is None else pd.concat([self.gp, df], axis=1)
+        self._compute_derived_fields(fields['derived'])
+        
+        # Field Type: Galaxy/Halo Identifiers
         if('galId' in fields):
             gids = galaxy.read_grp(self._path_grp, n_gas=self._n_gas, gas_only=True)
             self.gp = pd.concat([self.gp, gids], axis=1)
-
         if('haloId' in fields):
             hids = galaxy.read_sogrp(self._path_sogrp, n_gas=self._n_gas, gas_only=True)
             self.gp = pd.concat([self.gp, hids], axis=1)
 
-    def load_galaxies(self, fields=None):
+    def load_star_particles(self, fields, drop=True):
+        self.sp = self._load_fields('star', fields, drop=drop)
+        # Field Type: Galaxy/Halo Identifiers
+        if('galId' in fields):
+            gids = galaxy.read_grp(self._path_grp)
+            gids = gids.tail(self._n_star)
+            self.sp = pd.concat([self.sp, gids], axis=1)
+        if('haloId' in fields):
+            hids = galaxy.read_sogrp(self._path_sogrp)
+            hids = hids.tail(self._n_star)
+            self.sp = pd.concat([self.sp, hids], axis=1)
+
+    def _load_hdf5_fields(self, ptype, fields_hdf5, fields_metals):
+        '''
+        '''
+        if(isinstance(ptype, int)):
+            assert(0 <= ptype < 6), "ptype={} is out of range [0, 6)".format(ptype)
+        else:
+            assert(ptype in cfg['HDF5ParticleTypes']), "ptype={} is not a valid type.".format(ptype)
+            ptype = int(cfg['HDF5ParticleTypes'][ptype])
+        
+        cols = {}
+        elements = cfg['Simulation']['elements'].split(sep=',')        
+        with h5py.File(self._path_hdf5, "r") as hf:
+            hdf5part = hf['PartType'+str(ptype)]
+            for field in fields_hdf5:
+                hdf5field = hdf5schema.loc[field].HDF5Field
+                dtype = hdf5schema.loc[field].PandasType
+                if(hdf5field not in hdf5part):
+                    raise RuntimeError("{} is not found in the HDF5 file.".format(hdf5field))
+                cols[field] = hdf5part[hdf5field][:].astype(dtype)
+            # Now extract the metal field
+            hdf5field = hdf5schema.loc['Metals'].HDF5Field
+            dtype = hdf5schema.loc['Metals'].PandasType
+            for field in fields_metals:
+                cols[field] = hdf5part[hdf5field][:,elements.index(field)].astype(dtype)
+        return pd.DataFrame(cols)
+            
+    def _compute_derived_fields(self, fields_derived):
+        cols = {}
+        if('logT' in fields_derived):
+            print("Calculating for derived field: logT ...")
+            ne = self.gp['Ne']
+            u = self.gp['U']
+            xhe = self.gp['Y']
+            mu= (1.0 + 4.0 * xhe) / (1.0 + ne + xhe)
+            # u = (3/2)kT/(mu*m_H)
+            logT = np.log10(u * self._units_gizmo.u * mu * pc.mh /
+                            (1.5 * pc.k))
+            cols['logT'] = logT.astype('float32')
+        self.gp = pd.concat([self.gp, pd.DataFrame(cols)], axis=1)
+
+    def load_galaxies(self, fields=None, log_mass=True):
         self.gals = galaxy.read_stat(self._path_stat)
         if(fields is not None):
             fields = set(fields)
@@ -119,6 +162,24 @@ class Snapshot(object):
                 warnings.warn('These fields are not found in the .stat file: {}'.
                               format(fields ^ to_keep))
             self.gals = self.gals[to_keep]
+        if(log_mass == True):
+            for field in self.gals.columns.intersection(set(['Mgal', 'Mgas', 'Mstar'])):
+                self.gals['log'+field] = np.log10(self.gals[field] * self._units_tipsy.m / ac.msolar)
+                self.gals.drop(field, axis=1, inplace=True)
+
+    def load_halos(self, fields=None, log_mass=True):
+        self.halos = galaxy.read_sovcirc(self._path_sovcirc)
+        if(fields is not None):
+            fields = set(fields)
+            to_keep = fields & set(self.halos.columns)
+            if(fields ^ to_keep != set()):
+                warnings.warn('These fields are not found in the .sovcirc file: {}'.
+                              format(fields ^ to_keep))
+            self.halos = self.halos[to_keep]
+        if(log_mass == True):
+            for field in self.halos.columns.intersection(set(['Mvir', 'Msub'])):
+                self.halos['log'+field] = np.log10(self.halos[field] / self._h)
+                self.halos.drop(field, axis=1, inplace=True)
 
     @property
     def ngas(self):

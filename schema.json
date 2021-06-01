@@ -21,7 +21,7 @@
     },
     "stat":
     {
-	"columns": ["galId", "Npart", "Mtot", "Mgas", "Mstar",
+	"columns": ["galId", "Npart", "Mgal", "Mgas", "Mstar",
 		    "Vc_max", "Vc_half", "Vc_rmax", "R_vmax", "R_half",
 		    "R_max", "sigma1d", "x", "y", "z",
 		    "vx", "vy", "vz", "xbound", "ybound",
@@ -29,7 +29,7 @@
 	"dtypes": {
 	    "galId": "int32",
 	    "Npart": "int32",
-	    "Mtot": "float32",
+	    "Mgal": "float32",
 	    "Mgas": "float32",
 	    "Mstar": "float32",
 	    "Vc_max": "float32",

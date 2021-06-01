@@ -9,7 +9,7 @@ def read_sovcirc(path_sovcirc, schema=DefaultSchema):
     df = pd.read_csv(path_sovcirc, sep='\s+', skiprows=1,
                      names=schema['sovcirc']['columns'],
                      dtype=schema['sovcirc']['dtypes'])
-    df = df[:-1].set_index("haloID")
+    df = df[:-1].set_index("haloId")
     return df
 
 def read_stat(path_stat, schema=DefaultSchema):
