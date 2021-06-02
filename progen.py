@@ -4,9 +4,14 @@ snapshots.
 '''
 
 import snapshot
+from utils import talk
+import galaxy
 from myinit import *
+import pandas as pd
 
-model = "l12n144-phew-movie-200"
+__all__ = ['find_all_previous_progenitors', 'find_progenitors',
+           'build_haloId_hostId_map', 'get_relationship_between_halos']
+
 def find_all_previous_progenitors(snap, overwrite=False):
     '''
     Find the progenitors for all halos within a snapshot in all previous 
@@ -22,40 +27,49 @@ def find_all_previous_progenitors(snap, overwrite=False):
     
     Returns
     -------
-    progens: pandas DataFrame.
+    progTab: pandas DataFrame.
         A pandas table storing information for the progenitors of halos at
         different time.
-        columns: haloId*, snapnum, progenId, logMvir, logMsub
+        columns: haloId*, snapnum, progId, hostId, logMvir, logMsub
+    
+    Examples
+    --------
+    >>> snap = snapshot.Snapshot('l12n144-phew', 100)
+    >>> progTab = find_all_previous_progenitors(snap, overwrite=True)
+
     '''
 
-    schema = {'columns':['haloId','snapnum','progenId','logMvir','logMsub'],
+    schema = {'columns':['haloId','snapnum','progId','hostId','logMvir','logMsub'],
               'dtypes':{'haloId':'int32',
                         'snapnum':'int32',
-                        'progenId':'int32',
+                        'progId':'int32',
+                        'hostId':'int32',                        
                         'logMvir':'float32',
                         'logMsub':'float32'
               }
     }
     fout = os.path.join(snap._path_workdir, "progens_{:03d}.csv".format(snap.snapnum))
     if(os.path.exists(fout) and overwrite == False):
-        print("Read existing progenitor file: {}".format(fout))
+        talk("Read existing progenitor file: {}".format(fout), 'normal')
         return pd.read_csv(fout, skiprows=1, names=schema['columns'], dtype=schema['dtypes'])
 
-    progen = None
+    progTab = None
     for snapnum in range(snap.snapnum-3, snap.snapnum):
     # for snapnum in range(0, snap.snapnum):        
-        print("Finding progenitors in snapshot {:03d}".format(snapnum))
+        talk("Finding progenitors in snapshot {:03d}".format(snapnum), 'normal')
         snapcur = snapshot.Snapshot(snap.model, snapnum)
         snapcur.load_halos(['Mvir', 'Msub'])
-        haloId2progenId = find_progenitors(snap, snapcur)
-        df = pd.DataFrame(index=haloId2progenId.keys())
+        haloId2hostId = galaxy.read_sopar(snap._path_sopar, as_dict=True)
+        haloId2progId = find_progenitors(snap, snapcur)
+        df = pd.DataFrame(index=haloId2progId.keys())
         df['snapnum'] = snapnum
-        df['progenId'] = df.index.map(haloId2progenId)
-        df = pd.merge(df, snapcur.halos, how='left', left_on='progenId', right_index=True)
-        progen = df.copy() if (progen is None) else pd.concat([progen, df])
-    progen.index.rename('haloId', inplace=True)
-    progen.reset_index().to_csv(fout, index=False, columns=schema['columns'])
-    return progen
+        df['progId'] = df.index.map(haloId2progId)
+        df['hostId'] = df.progId.map(haloId2hostId)
+        df = pd.merge(df, snapcur.halos, how='left', left_on='progId', right_index=True)
+        progTab = df.copy() if (progTab is None) else pd.concat([progTab, df])
+    progTab.index.rename('haloId', inplace=True)
+    progTab.reset_index().to_csv(fout, index=False, columns=schema['columns'])
+    return progTab
 
 def find_progenitors(snap, snap_early):
     '''
@@ -92,10 +106,69 @@ def find_progenitors(snap, snap_early):
     idx = grp.groupby('haloId')['PId'].transform(max) == grp['PId']
     return dict(zip(grp[idx].haloId, grp[idx].progId))
 
+def build_haloId_hostId_map(snap):
+    '''
+    Build maps between haloId and hostId for each snapshot before the snapshot
+    parsed in the arguments.
 
-# snap1 = snapshot.Snapshot(model, 5)
-# snap2 = snapshot.Snapshot(model, 20)
-# m = find_progenitors(snap2, snap1)
+    Parameter
+    ---------
+    snap: class Snapshot.
 
-snap = snapshot.Snapshot(model, 20)
-progen = find_all_previous_progenitors(snap, overwrite=True)
+    Returns
+    -------
+    hostMap: dict.
+        {snapnum:{haloId:hostId}}
+    '''
+    hostMap = dict()
+    for snapnum in range(0, snap.snapnum):
+        snapcur = snapshot.Snapshot(snap.model, snapnum)
+        haloId2hostId = galaxy.read_sopar(snap._path_sopar, as_dict=True)
+        hostMap[snapnum] = haloId2hostId
+    return hostMap
+
+def get_relationship_between_halos(haloId, haloIdTarget, snapnum, progTab, hostMap):
+    '''
+    Get the relationship between the progenitor of a halo and another halo in 
+    the same snapshot as the progenitor.
+
+    Parameters
+    ----------
+    haloId: int.
+        The haloId of the halo in the current snapshot.
+    haloIdTarget: int
+        The haloId of the target halo at an earlier time.
+    snapnum: int
+        The corresponding snapnum of the snapshot target halo.
+    progTab: pandas DataFrame.
+        Output of find_all_previous_progenitors().
+        Defines the progenitors of a halo in any previous snapshot.
+        Columns: haloId*, snapnum, progId, hostId, logMvir, logMsub
+    hostMap: dict.
+        Output of build_haloId_hostId_map()
+        Mapping between haloId and hostId for each snapshot.
+
+    Returns
+    -------
+    relation: str
+        One of ['SELF', 'PARENT', 'SAT', 'SIB', 'IGM']
+        Interpreted as: haloIdTarget at snapnum is the [relation] of the 
+        progenitor of haloId at that snapshot.
+
+    Example
+    -------
+    >>> snap = snapshot.Snapshot('l12n144-phew', 100)
+    >>> hostMap = build_haloId_hostId_map(snap)
+    >>> progTab = find_all_previous_progenitors(snap)
+    >>> get_relationship_between_halos(10, 30, 50, progTab, hostMap)
+    '''
+
+    prog = progTab.loc[haloId].query('snapnum==@snapnum')
+    if(prog.empty): return "IGM"
+    if(int(prog.progId) == haloIdTarget): return "SELF"
+    if(int(prog.hostId) == haloIdTarget): return "PARENT"
+    hostIdTarget = hostMap[snapnum][haloIdTarget]
+    if(int(prog.progId) == hostIdTarget): return "SAT"
+    if(int(prog.hostId) == hostIdTarget): return "SIB"
+    return "IGM"
+

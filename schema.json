@@ -16,9 +16,16 @@
     },
     "sogrp":
     {
-	"columns": ["haloId","parentId"],
+	"columns": ["haloId","hostId"],
 	"dtypes": {"haloId":"int32",
-		   "parentId":"int32"
+		   "hostId":"int32"
+		  }
+    },
+    "sopar":
+    {
+	"columns": ["haloId","hostId"],
+	"dtypes": {"haloId":"int32",
+		   "hostId":"int32"
 		  }
     },
     "stat":

@@ -14,6 +14,7 @@ import units
 from astroconst import pc, ac
 
 import config
+from utils import talk
 cfg = config.cfg
 
 path_schema = "HDF5schema.csv"
@@ -33,6 +34,7 @@ class Snapshot(object):
         self._path_stat = os.path.join(self._path_model, "gal_z{:03d}.stat".format(snapnum))
         self._path_sogrp = os.path.join(self._path_model, "so_z{:03d}.sogrp".format(snapnum))
         self._path_sovcirc = os.path.join(self._path_model, "so_z{:03d}.sovcirc".format(snapnum))
+        self._path_sopar = os.path.join(self._path_model, "so_z{:03d}.par".format(snapnum))        
 
         with h5py.File(self._path_hdf5, "r") as hf:
             attrs = hf['Header'].attrs
@@ -84,8 +86,8 @@ class Snapshot(object):
         fields_hdf5 = hdf5schema.index.intersection(fields)
         elements = cfg['Simulation']['elements'].split(sep=',')
         fields_metals = fields & set(elements)
-        print("Fields to be derived: {}".format(fields_derived))
-        print("Fields to load: {}".format(fields))
+        talk("Fields to be derived: {}".format(fields_derived), 'normal')
+        talk("Fields to load: {}".format(fields), 'normal')
         return {'all':fields,
                 'hdf5':fields_hdf5,
                 'metals':fields_metals,
@@ -142,14 +144,14 @@ class Snapshot(object):
         info of dark matter particles.
         '''
         if(self.dp is not None and force_reload == False):
-            print("Dark particles already loaded. Use force_reload to reload.")
+            talk("Dark particles already loaded. Use force_reload to reload.", 'quiet')
             return
         df = self._load_hdf5_fields('dark', ['PId'], [])
         hids = galaxy.read_sogrp(self._path_sogrp)
         hids = hids[self.ngas:self.ngas+self.ndark].reset_index()
         # Use the haloId and not the parentId here.
         # parentId has subsumed satellite galaxies
-        self.dp = pd.concat([df, hids['haloId']], axis=1)
+        self.dp = pd.concat([df, hids['haloId'], hids['hostId']], axis=1)
 
     def _load_hdf5_fields(self, ptype, fields_hdf5, fields_metals):
         '''
@@ -180,7 +182,7 @@ class Snapshot(object):
     def _compute_derived_fields(self, fields_derived):
         cols = {}
         if('logT' in fields_derived):
-            print("Calculating for derived field: logT ...")
+            talk("Calculating for derived field: logT ...", 'quiet')
             ne = self.gp['Ne']
             u = self.gp['U']
             xhe = self.gp['Y']
@@ -205,10 +207,9 @@ class Snapshot(object):
                 self.gals['log'+field] = np.log10(self.gals[field] * self._units_tipsy.m / ac.msolar)
                 self.gals.drop(field, axis=1, inplace=True)
         self._n_gals = self.gals.shape[0]
-        print('Load {} galaxies ...'.format(self._n_gals))
+        talk('Load {} galaxies ...'.format(self._n_gals), 'quiet')
 
     def load_halos(self, fields=None, log_mass=True):
-        print('Load halos ...')
         self.halos = galaxy.read_sovcirc(self._path_sovcirc)
         if(fields is not None):
             fields = set(fields)
@@ -222,7 +223,7 @@ class Snapshot(object):
                 self.halos['log'+field] = np.log10(self.halos[field] / self._h)
                 self.halos.drop(field, axis=1, inplace=True)
         self._n_gals = self.halos.shape[0]
-        print('Load {} halos ...'.format(self._n_gals))
+        talk('Load {} halos ...'.format(self._n_gals), 'quiet')
 
     @property
     def model(self):

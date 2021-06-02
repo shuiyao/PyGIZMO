@@ -19,6 +19,15 @@ def read_stat(path_stat, schema=DefaultSchema):
     df = df.set_index("galId")
     return df
 
+def read_sopar(path_stat, schema=DefaultSchema, as_dict=False):
+    df = pd.read_csv(path_stat, sep='\s+', header=None,
+                     names=schema['sopar']['columns'],
+                     dtype=schema['sopar']['dtypes'])
+    if(as_dict == True):
+        return dict(zip(df.haloId, df.hostId))
+    else:
+        return df.set_index("haloId")
+
 def read_sogrp(path_sogrp, schema=DefaultSchema, n_gas=None, gheader=None, gas_only=False):
     hids = pd.read_csv(path_sogrp, skiprows=1,
                        names=schema['sogrp']['columns'],

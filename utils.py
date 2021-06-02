@@ -4,6 +4,7 @@ General utilities.
 
 import json
 import os
+import sys
 from config import cfg
 
 path_schema = os.path.join(cfg['Paths']['pygizmo'], "schema.json")
@@ -44,3 +45,11 @@ def load_default_schema():
     with open(path_schema) as json_data:
         schema = json.load(json_data)
     return schema
+
+def talk(text, verbose_level='always', err=False):
+    if(isinstance(verbose_level, str)):
+        verbose_level = cfg['Verbose'][verbose_level.lower()]
+    if(verbose_level > cfg['Verbose']['default']):
+        return
+    dest = sys.stderr if err else sys.stdout
+    print(text, file=dest)
