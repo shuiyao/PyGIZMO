@@ -86,8 +86,8 @@ class Snapshot(object):
         fields_hdf5 = hdf5schema.index.intersection(fields)
         elements = cfg['Simulation']['elements'].split(sep=',')
         fields_metals = fields & set(elements)
-        talk("Fields to be derived: {}".format(fields_derived), 'normal')
-        talk("Fields to load: {}".format(fields), 'normal')
+        talk("Fields to be derived: {}".format(fields_derived), 'quiet')
+        talk("Fields to load: {}".format(fields), 'quiet')
         return {'all':fields,
                 'hdf5':fields_hdf5,
                 'metals':fields_metals,
@@ -111,9 +111,10 @@ class Snapshot(object):
         if('galId' in fields['all']):
             gids = galaxy.read_grp(self._path_grp, n_gas=self._n_gas, gas_only=True)
             self.gp = pd.concat([self.gp, gids], axis=1)
-        if('haloId' in fields['all']):
+        if('haloId' in fields['all'] or 'hostId' in fields['all']):
             hids = galaxy.read_sogrp(self._path_sogrp, n_gas=self._n_gas, gas_only=True)
-            self.gp = pd.concat([self.gp, hids], axis=1)
+            fields_halo = set(['haloId', 'hostId']) & fields['all']
+            self.gp = pd.concat([self.gp, hids[fields_halo]], axis=1)
 
     def load_star_particles(self, fields, drop=True):
         '''

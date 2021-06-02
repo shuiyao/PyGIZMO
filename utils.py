@@ -7,7 +7,16 @@ import os
 import sys
 from config import cfg
 
+import pyarrow as pa
+
 path_schema = os.path.join(cfg['Paths']['pygizmo'], "schema.json")
+
+pyArrowTypeCast = {
+    "int64":pa.int64(),
+    "int32":pa.int32(),
+    "float32":pa.float32(),
+    "float64":pa.float64()
+}
 
 def cumhist(arr, bins=10, weights=None, reverse=False):
     '''
@@ -53,3 +62,28 @@ def talk(text, verbose_level='always', err=False):
         return
     dest = sys.stderr if err else sys.stdout
     print(text, file=dest)
+
+def get_pyarrow_schema_from_json(schema_json):
+    '''
+    Create a pyArrow schema from JSON type schema definition.
+
+    Parameters
+    ----------
+    schema_json: dict.
+        Must have a 'columns' field that gives the order of fields
+        Must have a 'dtypes' field that maps fieldname to numpy dtype
+        Example: {'columns':['col1', 'col2'], 
+                  'dtypes':{'col1':int32, 'col2':int64}}
+
+    Returns
+    -------
+    schema: pyArrow Schema.
+    '''
+    
+    cols = schema_json['columns']
+    dtypes = schema_json['dtypes']
+    fields = []
+    for col in cols:
+        field = pa.field(col, pyArrowTypeCast[dtypes[col]])
+        fields.append(field)
+    return pa.schema(fields)
