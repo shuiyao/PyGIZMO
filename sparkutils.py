@@ -1,6 +1,7 @@
 '''
 Utilities that provide Apache Spark support.
 '''
+__all__ = ['spark', 'sF', 'sc', 'spark_read_schema', 'Window']
 
 from pyspark.sql import SparkSession
 from pyspark.sql.window import Window

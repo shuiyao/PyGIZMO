@@ -1,6 +1,7 @@
 '''
 General utilities.
 '''
+__all__ = ['path_schema', 'cumhist', 'talk', 'load_timeinfo_for_snapshots']
 
 import json
 import os
@@ -10,7 +11,7 @@ from config import cfg
 import pandas as pd
 import pyarrow as pa
 
-path_schema = os.path.join(cfg['Paths']['pygizmo'], "schema.json")
+path_schema = os.path.join(cfg['Paths']['pygizmo'], cfg['Schema']['galaxy'])
 
 pyArrowTypeCast = {
     "int64":pa.int64(),

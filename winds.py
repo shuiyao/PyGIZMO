@@ -9,6 +9,8 @@ import glob
 import utils
 import pdb
 
+from sparkutils import *
+
 DefaultSchema = utils.load_default_schema()
 
 def read_initwinds(path_winds, nfiles=0, columns=None, schema=DefaultSchema, minPotIdField=True):
@@ -71,6 +73,23 @@ def read_phews(path_winds, nfiles=0, columns=None, schema=DefaultSchema):
         df = dfnew.copy() if i == 0 else pd.concat([df, dfnew])
         # Note 1. See end
     return df
+
+def spark_read_initwinds(path_winds, columns=None, schema=DefaultSchema):
+    schemaSpark = spark_read_schema(schema['initwinds'])
+    path_files = os.path.join(path_winds, "initwinds.*")
+    sdf = spark.read.options(delimiter=' ').csv(path_files, schemaSpark)
+    if(columns is not None):
+        sdf = sdf.select(columns)
+    return sdf
+
+def spark_read_rejoin(path_winds, columns=None, schema=DefaultSchema):
+    schemaSpark = spark_read_schema(schema['rejoin'])
+    path_files = os.path.join(path_winds, "rejoin*")
+    sdf = spark.read.options(delimiter=' ').csv(path_files, schemaSpark)
+    if(columns is not None):
+        sdf = sdf.select(columns)
+    return sdf
+
 
 __mode__ = "__x__"
 if __mode__ == "__test__":

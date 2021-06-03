@@ -2,7 +2,7 @@ from astroconst import pc, ac
 from config import cfg
 import pandas as pd
 
-__mode__ = "__test__"
+__mode__ = "__X__"
 def compute_halo_gas_components(snap, Tcut=None):
     '''
     Decompose the baryons in each halo into several phases, including cold gas,
