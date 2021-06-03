@@ -64,7 +64,7 @@ def talk(text, verbose_level='always', err=False):
     dest = sys.stderr if err else sys.stdout
     print(text, file=dest)
 
-def get_pyarrow_schema_from_json(schema_json):
+def pyarrow_read_schema(schema_json):
     '''
     Create a pyArrow schema from JSON type schema definition.
 

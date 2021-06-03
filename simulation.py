@@ -14,10 +14,29 @@ import os
 from bisect import bisect_right
 from tqdm import tqdm
 import snapshot
+import pyarrow as pa
+import pyarrow.parquet as pq
+
+from sparkutils import *
 
 PATHS = cfg['Paths']
 
-model = "l25n144-phew-rcloud"
+schema_phewtable = {'columns':['PId','snapnum','Mass','haloId'],
+                    'dtypes':{'PId':'int64',
+                              'snapnum':'int32',
+                              'Mass':'float64',
+                              'haloId':'int32'}
+}
+schema_inittable = {'columns':['PId','snapfirst','minit','snaplast','mlast'],
+                    'dtypes':{'PId':'int64',
+                              'snapfirst':'int32',
+                              'minit':'float64',
+                              'snaplast':'int32',
+                              'mlast':'float64'}
+}
+
+
+model = "l12n144-phew-movie-200"
 class Simulation():
     def __init__(self, model):
         self._model = model
@@ -29,7 +48,7 @@ class Simulation():
             os.mkdir(self._path_workdir)
         self._n_snaps = None
 
-    def build_inittable_from_simulation(self, overwrite=False):
+    def build_inittable_from_simulation(self, overwrite=False, spark=None):
         '''
         Gather all PhEW particles within the entire simulation and find their 
         initial and final attributes. Returns an inittable that will be queried
@@ -39,32 +58,32 @@ class Simulation():
         ----------
         overwrite: boolean. Default=False.
             If True, force creating the table.
+        spark: SparkSession. Default=None
+            If None, return the table as a pandas dataframe.
+            Otherwise, return the table as a Spark dataframe.
         
         Returns
         -------
-        inittable: pandas.DataFrame.
+        inittable: pandas.DataFrame or Spark DataFrame
             The initial and final attributes of all PhEW particles
             Columns: PId*, snapfirst, minit, snaplast, mlast
             snapfirst is the snapshot BEFORE it was launched as a wind
             snaplast is the snapshot AFTER it stopped being a PhEW
         '''
-        schema = {'columns':['PId','snapfirst','minit','snaplast','mlast'],
-                  'dtypes':{'PId':'int64',
-                            'snapfirst':'int32',
-                            'minit':'float32',
-                            'snaplast':'int32',
-                            'mlast':'float32'}
-        }
         fout = os.path.join(self._path_workdir, "inittable.csv",)
 
         # Load if existed.
         if(os.path.exists(fout) and overwrite == False):
             talk("Loading existing inittable.csv file...", 'normal')
-            return pd.read_csv(fout, dtype=schema['dtypes'])
+            if(spark is not None):
+                schemaSpark = spark_read_schema(schema_inittable)
+                return spark.read.csv(fout, schema)
+            else:
+                return pd.read_csv(fout, dtype=schema_inittable['dtypes'])
 
         # Create new if not existed.
-        dfi = winds.read_initwinds(path_winds, columns=['atime','PhEWKey','Mass','PID'], minPotIdField=False)
-        dfr = winds.read_rejoin(path_winds, columns=['atime','PhEWKey','Mass'])
+        dfi = winds.read_initwinds(self._path_winds, columns=['atime','PhEWKey','Mass','PID'], minPotIdField=False)
+        dfr = winds.read_rejoin(self._path_winds, columns=['atime','PhEWKey','Mass'])
 
         redz = utils.load_timeinfo_for_snapshots()
         dfi['snapfirst'] = dfi.atime.map(lambda x : bisect_right(redz.a, x)-1)
@@ -79,36 +98,83 @@ class Simulation():
         df.to_csv(fout, index=False)
         return df
 
-    def build_phewtable_from_simulation(self, snaplast=None, snapstart=0):
+    def build_phewtable_from_simulation(self, snaplast=None, snapstart=0, overwrite=False, ignore_init=False, spark=None):
         '''
         Build a gigantic table that contains all PhEW particles ever appeared in a
         simulation. The initial status and the final status of a PhEW particle is
         found in initwinds.* and rejoin.* files. Any one record corresponds to a 
         PhEW particle at a certain snapshot.
         Opt for parallel processing.
+
+        Parameters
+        ----------
+        snapstart: int. Default=0
+        snaplast: int. Default=None
+            If None. Use all snapshot until the end of the simulation.
+        overwrite: boolean. Default=False
+            If True, force creating the table and overwrite existing file.
+        ignore_init: boolean. Default=False
+            If True, do not include the initial/final state of the particles
+            in the phewtable.
+        spark: SparkSession. Default=None
+            If None, return the table as a pandas dataframe.
+            Otherwise, return the table as a Spark dataframe.
+
+        Returns
+        -------
+        phewtable: pandas.DataFrame or Spark DataFrame
+            A gigantic table containing all PhEW particles in any snapshot.
+            Columns: PId*, snapnum, Mass, haloId
+            This table will be heavily queried by the accretion tracking engine.
+
+        OutputFiles
+        -----------
+        data/phewtable.parquet
         '''
 
+        path_phewtable = os.path.join(self._path_data, "phewtable.parquet")
+        if(overwrite==False and os.path.exists(path_phewtable)):
+            talk("Load existing phewtable.", 'talky')
+            if(spark is not None):
+                schemaSpark = spark_read_schema(schema_phewtable)
+                return spark.read.parquet(path_phewtable)
+            else:
+                phewtable = pd.read_parquet(path_phewtable)
+                return phewtable
+        
         if(snaplast is None):
             snaplast = self.nsnaps
             
         phewtable = None
         for snapnum in tqdm(range(snapstart, snaplast+1), desc='snapnum', ascii=True):
             snap = snapshot.Snapshot(sim.model, snapnum)
-            snap.load_gas_particles(['PId','Mass','Mc'])
-            gp = snap.gp.loc[snap.gp.Mc > 0, ['PId','Mass']]    
+            snap.load_gas_particles(['PId','Mass','Mc','haloId'])
+            gp = snap.gp.loc[snap.gp.Mc > 0, ['PId','Mass','haloId']]    
             gp.loc[:,'snapnum'] = snapnum
             phewtable = gp.copy() if phewtable is None else pd.concat([phewtable, gp])
 
-        inittable = self.build_inittable_from_simulation()
-        tmp = inittable[['PId','minit','snapfirst']]\
-            .rename(columns={'minit':'Mass','snapfirst':'snapnum'})
-        phewtable = pd.concat([phewtable, tmp])
-        tmp = inittable[['PId','mlast','snaplast']]\
-            .rename(columns={'mlast':'Mass','snaplast':'snapnum'})
-        phewtable = pd.concat([phewtable, tmp])
+        if (not ignore_init):
+            inittable = self.build_inittable_from_simulation()
+            tmp = inittable[['PId','minit','snapfirst']]\
+                .rename(columns={'minit':'Mass','snapfirst':'snapnum'})
+            tmp['haloId'] = 0 # Unknown
+            phewtable = pd.concat([phewtable, tmp])
+            tmp = inittable[['PId','mlast','snaplast']]\
+                .rename(columns={'mlast':'Mass','snaplast':'snapnum'})
+            tmp['haloId'] = 0 # Unknown        
+            phewtable = pd.concat([phewtable, tmp])
 
         # Very computationally intensive
-        phewtable = phewtable.set_index('PId').sort_values('snapnum')
+        phewtable = phewtable.sort_values(['PId','snapnum'])
+
+        # This will take for-ever
+        # phewtable['dM'] = phewtable.groupby('PId')['Mass'].diff().fillna(0.0)
+
+        # Write parquet file.
+        schema = utils.get_pyarrow_schema_from_json(schema_phewtable)
+        tab = pa.Table.from_pandas(phewtable, schema=schema, preserve_index=False)
+        pq.write_table(tab, path_phewtable)
+        
         return phewtable
 
     @property
@@ -127,13 +193,22 @@ class Simulation():
         else:
             return self._n_snaps
 
-        
-
 sim = Simulation(model)
-df = sim.build_phewtable_from_simulation(snapstart=100, snaplast=108)
+# df = sim.build_phewtable_from_simulation(snapstart=100, snaplast=108, ignore_init=True)
 
-
-
+def compute_mloss_partition_by_pId(phewtable, spark=None):
+    '''
+    For each PhEW particle in the phewtable, compute its mass loss since last
+    snapshot (it could have just launched after the last snapshot).
+    '''
+    if(spark is None):
+        # This is a very expensive operation
+        phewtable['Mloss'] = phewtable.groupby('PId').diff().fillna(0.0)
+        return phewtable
+    else:
+        w = Window.partitionBy(phewtable.PId).orderBy(phewtable.snapnum)
+        return sdf.withColumn('Mloss', sdf.Mass - sF.lag('Mass',1).over(w))\
+                  .na.fill(0.0)
 
 
 
