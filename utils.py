@@ -7,6 +7,7 @@ import os
 import sys
 from config import cfg
 
+import pandas as pd
 import pyarrow as pa
 
 path_schema = os.path.join(cfg['Paths']['pygizmo'], "schema.json")
@@ -87,3 +88,8 @@ def get_pyarrow_schema_from_json(schema_json):
         field = pa.field(col, pyArrowTypeCast[dtypes[col]])
         fields.append(field)
     return pa.schema(fields)
+
+def load_timeinfo_for_snapshots(fredz="redshift.txt"):
+    df_redz = pd.read_csv(fredz, sep='\s+', header=0)
+    df_redz = df_redz.drop("snapnum", axis=1)
+    return df_redz
