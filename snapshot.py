@@ -41,7 +41,10 @@ class Snapshot(object):
             self._header_keys = set(attrs.keys())
             self._gp_keys = set(hf['PartType0'].keys())
             self._dp_keys = set(hf['PartType1'].keys())
-            self._sp_keys = set(hf['PartType4'].keys())
+            try:
+                self._sp_keys = set(hf['PartType4'].keys())
+            except:
+                self._sp_keys = set()                
             self._n_gas = attrs['NumPart_Total'][0]
             self._n_dark = attrs['NumPart_Total'][1]
             self._n_star = attrs['NumPart_Total'][4]

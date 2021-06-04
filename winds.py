@@ -13,7 +13,7 @@ from sparkutils import *
 
 DefaultSchema = utils.load_default_schema()
 
-def read_initwinds(path_winds, nfiles=0, columns=None, schema=DefaultSchema, minPotIdField=True):
+def read_initwinds(path_winds, nfiles=0, sep=',', columns=None, schema=DefaultSchema, minPotIdField=True):
     if(nfiles):
         n = nfiles
     else:
@@ -26,17 +26,16 @@ def read_initwinds(path_winds, nfiles=0, columns=None, schema=DefaultSchema, min
     for i in range(n):
         filename = os.path.join(path_winds, "initwinds.{}".format(i))
         skip = 1 if i==0 else 0
-        dfnew = pd.read_csv(filename, sep='\s+', skiprows=skip,
+        dfnew = pd.read_csv(filename, sep=sep, skiprows=skip,
                             names=cols,
                             dtype=schema['initwinds']['dtypes'])
-
         if(columns is not None):
             dfnew = dfnew.loc[:,columns]
         df = dfnew.copy() if i == 0 else pd.concat([df, dfnew])
         # Note 1. See end
     return df
 
-def read_rejoin(path_winds, nfiles=0, columns=None, schema=DefaultSchema):
+def read_rejoin(path_winds, nfiles=0, sep=',', columns=None, schema=DefaultSchema):
     if(nfiles):
         n = nfiles
     else:
@@ -46,7 +45,7 @@ def read_rejoin(path_winds, nfiles=0, columns=None, schema=DefaultSchema):
     for i in range(n):
         filename = os.path.join(path_winds, "rejoin.{}".format(i))
         skip = 1 if i==0 else 0
-        dfnew = pd.read_csv(filename, sep='\s+', skiprows=skip,
+        dfnew = pd.read_csv(filename, sep=sep, skiprows=skip,
                             names=schema['rejoin']['columns'],
                             dtype=schema['rejoin']['dtypes'])
         if(columns is not None):

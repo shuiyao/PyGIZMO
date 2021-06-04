@@ -27,16 +27,19 @@ schema_phewtable = {'columns':['PId','snapnum','Mass','haloId'],
                               'Mass':'float64',
                               'haloId':'int32'}
 }
-schema_inittable = {'columns':['PId','snapfirst','minit','snaplast','mlast'],
+schema_inittable = {'columns':['PId','snapfirst','minit','birthId',
+                               'snaplast','mlast'],
                     'dtypes':{'PId':'int64',
                               'snapfirst':'int32',
                               'minit':'float64',
+                              'birthId':'int32',
                               'snaplast':'int32',
                               'mlast':'float64'}
 }
 
 
-model = "l12n144-phew-movie-200"
+# model = "l12n144-phew-movie-200"
+model = "l25n144-test"
 class Simulation():
     def __init__(self, model):
         self._model = model
@@ -66,7 +69,7 @@ class Simulation():
         -------
         inittable: pandas.DataFrame or Spark DataFrame
             The initial and final attributes of all PhEW particles
-            Columns: PId*, snapfirst, minit, snaplast, mlast
+            Columns: PId*, snapfirst, minit, birthId, snaplast, mlast
             snapfirst is the snapshot BEFORE it was launched as a wind
             snaplast is the snapshot AFTER it stopped being a PhEW
         '''
@@ -77,24 +80,38 @@ class Simulation():
             talk("Loading existing inittable.csv file...", 'normal')
             if(spark is not None):
                 schemaSpark = spark_read_schema(schema_inittable)
-                return spark.read.csv(fout, schema)
+                return spark.read.option('header','true').csv(fout, schemaSpark)
             else:
                 return pd.read_csv(fout, dtype=schema_inittable['dtypes'])
 
         # Create new if not existed.
-        dfi = winds.read_initwinds(self._path_winds, columns=['atime','PhEWKey','Mass','PID'], minPotIdField=False)
-        dfr = winds.read_rejoin(self._path_winds, columns=['atime','PhEWKey','Mass'])
-
+        dfi = winds.read_initwinds(self._path_winds, columns=['atime','PhEWKey','Mass','PID'], minPotIdField=True)
         redz = utils.load_timeinfo_for_snapshots()
         dfi['snapfirst'] = dfi.atime.map(lambda x : bisect_right(redz.a, x)-1)
         dfi.rename(columns={'Mass':'minit','PID':'PId'}, inplace=True)
+        grps = dfi.groupby('snapfirst')
+        
+        talk("Looking for the halos where PhEW particles are born.", "normal")
+        frames = []
+        for snapnum in tqdm(range(0, sim.nsnaps), desc='snapnum', ascii=True):
+            snap = snapshot.Snapshot(sim.model, snapnum)
+            snap.load_gas_particles(['PId','haloId'])
+            df = pd.merge(grps.get_group(snapnum), snap.gp, how='left',
+                          left_on='PId', right_on='PId')
+            frames.append(df)
+        dfi = pd.concat(frames, axis=0).rename(columns={'haloId':'birthId'})
+        dfi.birthId = dfi.birthId.fillna(0).astype('int32')
+
+        # Load final status of the winds and merge
+        dfr = winds.read_rejoin(self._path_winds, columns=['atime','PhEWKey','Mass'])
         dfr['snaplast'] = dfr.atime.map(lambda x : bisect_right(redz.a, x))
         dfr.rename(columns={'Mass':'mlast'}, inplace=True)
-
         df = pd.merge(dfi, dfr, how='left', left_on='PhEWKey', right_on='PhEWKey')
         df.snaplast = df.snaplast.fillna(109).astype('int32')
         df.mlast = df.mlast.fillna(0.0).astype('float32')
-        df = df[['PId','snapfirst','minit','snaplast','mlast']]
+
+        df = df[['PId','snapfirst','minit','birthId','snaplast','mlast']]
+
         df.to_csv(fout, index=False)
         return df
 
@@ -193,9 +210,6 @@ class Simulation():
         else:
             return self._n_snaps
 
-sim = Simulation(model)
-# df = sim.build_phewtable_from_simulation(snapstart=100, snaplast=108, ignore_init=True)
-
 def compute_mloss_partition_by_pId(phewtable, spark=None):
     '''
     For each PhEW particle in the phewtable, compute its mass loss since last
@@ -210,6 +224,9 @@ def compute_mloss_partition_by_pId(phewtable, spark=None):
         return sdf.withColumn('Mloss', sdf.Mass - sF.lag('Mass',1).over(w))\
                   .na.fill(0.0)
 
+sim = Simulation(model)
+df = sim.build_inittable_from_simulation(overwrite=False)
+# df = sim.build_phewtable_from_simulation(snapstart=100, snaplast=108, ignore_init=True)
 
 
 
