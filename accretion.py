@@ -22,8 +22,8 @@ import pyarrow as pa
 import pyarrow.parquet as pq
 
 import pdb
+import simulation
 
-# TODO: Tag the pptable (query progtable and hostmap)
 # TODO: Aggregate
 
 schema_gptable = {'columns':['PId','snapnum','Mass','haloId'],
@@ -47,17 +47,15 @@ schema_pptable = {'columns':['PId','haloId','snapnum','Mloss','birthId'],
 
 model = "l25n144-test"
 
-pidlist = [707945, 728826, 667761, 604544]
 def build_gptable(pidlist, snaplast, snapstart=0, overwrite=False):
     '''
-    >>> pidlist = [200000, 200001, 300000, 300001]
-    >>> gptable, pptable = load_gptable_and_pptable(pidlist, 190, 200)
     '''
     path_gptable = os.path.join(cfg['Paths']['tmp'], "gptable.parquet")
     if(overwrite==False and os.path.exists(path_gptable)):
         talk("Load existing gptable.", 'normal')
         gptable = pd.read_parquet(path_gptable)
         return gptable
+
     talk("Building gptable for {} gas particles".format(len(pidlist)), 'normal')
     gptable = None
     for snapnum in tqdm(range(snapstart, snaplast+1), desc='snapnum', ascii=True):
@@ -74,7 +72,7 @@ def build_gptable(pidlist, snaplast, snapstart=0, overwrite=False):
     pq.write_table(tab, path_gptable)
     return gptable
 
-def build_pptable(gptable, inittable, phewtable):
+def build_pptable(gptable, inittable, phewtable, overwrite=False):
     '''
     Build or load a temporary table that stores all the necessary attributes 
     of selected PhEW particles that can be queried by the accretion tracking 
@@ -90,10 +88,12 @@ def build_pptable(gptable, inittable, phewtable):
         Columns: PId*, snapfirst, minit, birthId, snaplast, mlast
         The initial/final status of all PhEW particles
         Needed to know from which halo a PhEW particles were born
+        Created from Simulation.build_inittable_from_simulation()
     phewtable: pandas.DataFrame or Spark DataFrame
         Columns: PId*, snapnum, Mass, haloId, (Mloss)
         All PhEW particles in any snapshot of the simulation
         The function return is a subset of it
+        Created from Simulation.build_phewtable_from_simulation()
 
     Returns
     -------
@@ -110,20 +110,20 @@ def build_pptable(gptable, inittable, phewtable):
         return pptable
     
     # Find all halos that ever hosted the gas particles in gptable
-    halos_to_do = compile_halos_to_do(gptable)
+    halos = compile_halos_to_process(gptable)
 
     # Find all PhEW particles that ever appeared in these halos
     # Computionally intensive.
-    pptable = pd.merge(gptable, phewtable, how='left',
+    pptable = pd.merge(halos, phewtable, how='left',
                        left_on=['snapnum', 'haloId'],
                        right_on=['snapnum', 'haloId'])
     # pptable: snapnum, haloId, PId, Mloss
     
     # Add the birth halo information to pptable
-    pptable = pd.merge(pptable, inittable[['snapfirst','birthId']], how='left',
-                       left_on='PId', right_index=True)
+    pptable = pd.merge(pptable, inittable[['PId','snapfirst','birthId']],
+                       how='left', left_on='PId', right_on='PId')
 
-    schema = utils.get_pyarrow_schema_from_json(schema_pptable)
+    schema = utils.pyarrow_read_schema(schema_pptable)
     tab = pa.Table.from_pandas(pptable, schema=schema, preserve_index=False)
     pq.write_table(tab, path_pptable)
     return pptable
@@ -136,19 +136,20 @@ def define_halo_relationship(progId, progHost, haloId, hostId):
     if(progHost == hostId): return "SIB"
     return "IGM"
 
-def build(haloIdTarget, gptable, progtable, hostmap):
+def assign_birthtags_to_halos(haloIdTarget, gptable, progtable, hostmap):
     '''
     Map from the unique halo identifier (snapnum, haloId) to a descriptor for 
-    their relationship.
+    its relationship with another halo (haloIdTarget) at a later time.
+    In the accretion tracking engine, the table is built iteratively for each 
+    halo of interest.
 
     Parameters
     ----------
     haloIdTarget: int.
         The haloId of the halo in the current snapshot.
-    gptable: pandas.DataFrame or Spark DataFrame
-        Columns: PId*, snapnum, Mass, haloId
-        Gas particles whose histories we are tracking.
-        Needed to find the list of halos for processing
+    pptable: pandas.DataFrame or Spark DataFrame
+        Columns: PId*, snapnum, Mass, haloId, snapfirst, birthId
+        PhEW particles that shared mass with the gas particles
     progtable: pandas.DataFrame.
         Columns: haloId*, snapnum, progId, hostId, logMvir, logMsub
         Output of progen.find_all_previous_progenitors().
@@ -157,14 +158,20 @@ def build(haloIdTarget, gptable, progtable, hostmap):
         Columns: snapnum*, haloId*, hostId
         Output of progen.build_haloId_hostId_map()
         Mapping between haloId and hostId for each snapshot.
+
+    Returns:
+    birthtags: pandas.DataFrame
+        Columns: snapnum*, haloId*, birthTag
+        Map between a halo (MultiIndex(snapnum, haloId)) to the birthTag, which 
+        defines its relation to another halo (haloIdTarget) at a later time.
     '''
 
-    progsTarget = progtable.loc[progtable.haloId == haloIdTarget,
+    progsTarget = progtable.loc[progtable.index == haloIdTarget,
                                 ['snapnum', 'progId', 'hostId']]
     progsTarget.rename(columns={'hostId':'progHost'}, inplace=True)
     
-    halos = compile_halos_to_do(gptable)
-    halos = halos[halos.snapnum < 52].set_index(['snapnum', 'haloId'])
+    halos = compile_halos_to_process(pptable, ['snapfirst','birthId'])\
+        .set_index(['snapnum', 'haloId'])
 
     # Find the hostId of each halo in its snapshot
     halos = halos.join(hostmap, how='left') # (snapnum, haloId) -> hostId
@@ -179,6 +186,21 @@ def build(haloIdTarget, gptable, progtable, hostmap):
 
 def fetch_phew_particles_for_halos(snap, hids):
     '''
+    Fetch all PhEW particles in a snapshot that appear in any of the halo in 
+    a list of halos.
+
+    Parameter
+    ---------
+    snap: class Snapshot.
+    hids: array type.
+        A list of haloIds in the snapshot.
+
+    Returns
+    -------
+    phewp: pandas.DataFrame.
+        Columns: haloId, snapnum, PId.
+        A list of PhEW partcles that appear in the halos.
+
     >>> hids = pd.Series([534, 584, 374])
     '''
     if(isinstance(hids, list)): hids = pd.Series(hids)
@@ -191,45 +213,10 @@ def fetch_phew_particles_for_halos(snap, hids):
     talk("{} PhEW particles fetched for {} halos.".format(phewp.shape[0], hids.size), 'talky')
     return phewp
 
-def load_gptable_and_pptable(pidlist, snaplast, snapstart=0, overwrite=False):
-    '''
-    >>> pidlist = [200000, 200001, 300000, 300001]
-    >>> gptable, pptable = load_gptable_and_pptable(pidlist, 190, 200)
-    '''
-    path_gptable = os.path.join(cfg['Paths']['tmp'], "gptable.parquet")
-    path_pptable = os.path.join(cfg['Paths']['tmp'], "pptable.parquet")    
-    if(overwrite==False and os.path.exists(path_gptable)):
-        talk("Load existing gptable and pptable", 'normal')
-        gptable = pd.read_parquet(path_gptable)
-        pptable = pd.read_parquet(path_pptable)
-        return gptable, pptable
-    talk("Building gptable for {} gas particles".format(len(pidlist)), 'normal')
-    gptable, pptable = None, None
-    for snapnum in tqdm(range(snapstart, snaplast+1), desc='snapnum', ascii=True):
-        snap = snapshot.Snapshot('l12n144-phew-movie-200', snapnum)
-        snap.load_gas_particles(['PId','Mass','haloId','Mc'])
-        gp = snap.gp.query('PId in @pidlist')
-
-        # Here we know which halos from this snapshot needs to be processed in 
-        # the future. Now we get all the PhEW particles that happen to be in 
-        # these halos
-        pp = fetch_phew_particles_for_halos(snap, gp.haloId.drop_duplicates())
-        
-        gp.loc[:,'snapnum'] = snapnum
-        gptable = gp.copy() if gptable is None else pd.concat([gptable, gp])
-        pptable = pp.copy() if pptable is None else pd.concat([pptable, pp])
-        
-    schema = utils.get_pyarrow_schema_from_json(schema_gptable)
-    tab = pa.Table.from_pandas(gptable, schema=schema, preserve_index=False)
-    pq.write_table(tab, path_gptable)
-    schema = utils.get_pyarrow_schema_from_json(schema_pptable)
-    tab = pa.Table.from_pandas(pptable, schema=schema, preserve_index=False)
-    pq.write_table(tab, path_pptable)
-    return gptable, pptable
-
-def compile_halos_to_do(gptable):
-    halos = gptable[['snapnum','haloId']]
-    halos = halos[halos.haloId > 0].drop_duplicates()
+def compile_halos_to_process(gptable, fields=['snapnum', 'haloId']):
+    halos = gptable.loc[:, fields]
+    halos.rename(columns={fields[0]:'snapnum', fields[1]:'haloId'}, inplace=True)
+    halos = halos[halos.haloId != 0].drop_duplicates()
     return halos
 
 def gp_mass_gain_since_last_snapshot(PId, snapnum, gptable):
@@ -285,8 +272,42 @@ def phew_mass_loss_since_last_checkpoint(PId, snapnum, gptable, inittable):
 
 import progen
 from progen import *
-snap = snapshot.Snapshot(model, 52)
-gptable = build_gptable(pidlist, 52, 48, overwrite=False)
-progtable = find_all_previous_progenitors(snap)
-hostmap = build_haloId_hostId_map(snap)
-x = build(4, gptable, progtable, hostmap)
+
+REFRESH = False
+
+sim = simulation.Simulation(model)
+snap = snapshot.Snapshot(model, 33)
+progtable = find_all_previous_progenitors(snap, overwrite=REFRESH)
+hostmap = build_haloId_hostId_map(snap, overwrite=REFRESH)
+
+# Time-consuming, but only needs one-go for each simulation
+inittable = sim.build_inittable(overwrite=False)
+sim.build_phewtable(overwrite=False)
+sim.compute_mloss_partition_by_pId(overwrite=False, spark=spark)
+
+phewtable = sim.load_phewtable()
+
+galIdTarget = 3 # Npart = 28, logMgal = 9.5, within 0.8-0.9 range
+pidlist = snap.get_gas_particles_in_halo(galIdTarget)
+gptable = build_gptable(pidlist, 33, 0, overwrite=REFRESH)
+gptable = sim.compute_mgain_partition_by_pId(gptable)
+gptable.haloId = gptable.haloId.apply(abs)
+
+pptable = build_pptable(gptable, inittable, phewtable, overwrite=True)
+birthtags = assign_birthtags_to_halos(galIdTarget, pptable, progtable, hostmap)
+pptable = pd.merge(pptable, birthtags, how='left',
+                   left_on=['snapfirst','birthId'], right_index=True)
+
+# This is only for code test
+pptable.loc[(pptable.snapfirst==30)&(pptable.birthId==2), 'birthTag'] = 'SAT'
+
+# Get the mass gained by each halo since the snapshot partitioned by birthTag
+grps = pptable.groupby(['snapnum', 'haloId'])
+x = grps.apply(lambda x: x[['Mloss','birthTag']].groupby('birthTag').sum()).reset_index('birthTag')
+y = pd.merge(gptable, x, how='left', left_on=['snapnum', 'haloId'], right_on=['snapnum', 'haloId'])
+
+
+# haloId
+# -> pptable + birthtag
+# -> pptable.groupby(['snapnum','haloId']).agg(f('Mloss','tag'))
+# -> gptable.join(pptable, on=['snapnum', haloId])[Mgain_tag]

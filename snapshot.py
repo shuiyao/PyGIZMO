@@ -116,6 +116,10 @@ class Snapshot(object):
             self.gp = pd.concat([self.gp, gids], axis=1)
         if('haloId' in fields['all'] or 'hostId' in fields['all']):
             hids = galaxy.read_sogrp(self._path_sogrp, n_gas=self._n_gas, gas_only=True)
+            # At early redshifts, no galaxy has formed yet. gids is empty.
+            if(hids.empty):
+                hids['haloId'] = pd.Series(np.zeros(self.ngas, dtype=int))
+                hids['hostId'] = pd.Series(np.zeros(self.ngas, dtype=int))
             fields_halo = set(['haloId', 'hostId']) & fields['all']
             self.gp = pd.concat([self.gp, hids[fields_halo]], axis=1)
 
@@ -279,6 +283,66 @@ class Snapshot(object):
             return int(self._n_gals)
         self.load_galaxies(log_mass=False)
         return int(self._n_gals)
+
+    def get_gas_particles_in_halo(self, haloId, include_ism=False):
+        '''
+        Get a list of particle IDs for all gas particles that belong to a given
+        halo. 
+
+        Parameters
+        ----------
+        haloId: int.
+            The unique Id of the halo.
+        include_ism: boolean. Default=False
+            If True, include the ISM particles in the list.
+
+        Returns
+        -------
+        pIdlist: list.
+        '''
+
+        self.load_gas_particles(['PId','haloId'])
+        if(include_ism == False):
+            self.load_gas_particles(['Sfr'], drop=False)
+            gp = self.gp.query('haloId == @haloId and Sfr == 0')
+        else:
+            gp = self.gp.query('haloId == @haloId')
+        talk("{} gas particles loaded from halo #{}".format(gp.shape[0], haloId), 'normal')
+        return list(gp.PId)
+
+    def select_galaxies_by_mass_percentiles(self, plow, phigh, index_only=False):
+        '''
+        Select galaxies whose mass (logMgal) is within a percentile range.
+        
+        Parameters
+        ----------
+        plow: float, [0.0, 1.0]
+            Lower limit of the percentiles.
+        phigh: float, [0.0, 1.0]
+            Higher limit of the percentiles.
+        index_only: boolean. Default=False
+            If True, return only the indices of selected galaxies.
+
+        Return
+        ------
+        pandas.Index or pandas.DataFrame.
+        '''
+
+        assert(0.0 <= plow <= 1.0), "plow must be within [0.0, 1.0]."
+        assert(0.0 <= phigh <= 1.0), "phigh must be within [0.0, 1.0]."
+        assert(plow <= phigh), "plow must be smaller than phigh"
+
+        if(index_only):
+            self.load_galaxies(['Mgal'])
+        else:
+            self.load_galaxies(['Npart','Mgal','Mstar'])
+        mlower = self.gals.logMgal.quantile(plow)        
+        mupper = self.gals.logMgal.quantile(phigh)
+        gals = self.gals.query("logMgal <= @mupper and logMgal >= @mlower")
+        if(index_only):
+            return gals.Index()
+        else:
+            return gals
     
     
 '''
@@ -294,4 +358,4 @@ Index(['PId', 'Tmax'], dtype='object')
 Index(['PId', 'Tmax', 'Ne'], dtype='object')
 '''
 
-snap = Snapshot("l12n144-phew-movie-200", 100)
+snap = Snapshot("l25n144-test", 33)

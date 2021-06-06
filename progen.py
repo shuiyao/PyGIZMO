@@ -20,14 +20,11 @@ schema_progtable = {'columns':['haloId','snapnum','progId','hostId','logMvir','l
                               'progId':'int32',
                               'hostId':'int32',
                               'logMvir':'float32',
-                              'logMsub':'float32'}
+                              'logMsub':'float32',
+                              'Npart':'int32'}
 }
 
-# Debug
-model = "l25n144-test"
-snap = snapshot.Snapshot(model, 15)
-
-def find_all_previous_progenitors(snap, overwrite=False):
+def find_all_previous_progenitors(snap, overwrite=False, load_halo_mass=True):
     '''
     Find the progenitors for all halos within a snapshot in all previous 
     snapshots.
@@ -39,6 +36,8 @@ def find_all_previous_progenitors(snap, overwrite=False):
         If False, first try to see if a table already exists. Create a new 
         table if not.
         If True, create a new table and overwrite the old one if needed.
+    load_halo_mass: boolean. Default=True
+        If True. Load logMvir and logMsub for each progenitor.
     
     Returns
     -------
@@ -55,18 +54,25 @@ def find_all_previous_progenitors(snap, overwrite=False):
     '''
 
     fout = os.path.join(snap._path_workdir, "progens_{:03d}.csv".format(snap.snapnum))
+    schema = schema_progtable
+    if(load_halo_mass == False):
+        schema['columns'].remove('logMvir')
+        schema['columns'].remove('logMsub')
+        schema['columns'].append('Npart')        
     if(os.path.exists(fout) and overwrite == False):
         talk("Read existing progenitor file: {}".format(fout), 'normal')
         return pd.read_csv(fout, skiprows=1,
-                           names=schema_progtable['columns'],
-                           dtype=schema_progtable['dtypes'])
+                           names=schema['columns'],
+                           dtype=schema['dtypes']).set_index('haloId')
 
     talk("Finding progenitors for halos in snapshot_{:03d}" .format(snap.snapnum), 'normal')
     progtable = None
-    for snapnum in tqdm(range(snap.snapnum-10, snap.snapnum), desc='snapnum', ascii=True):
-    # for snapnum in range(0, snap.snapnum):        
+    for snapnum in tqdm(range(0, snap.snapnum+1), desc='snapnum', ascii=True):
         snapcur = snapshot.Snapshot(snap.model, snapnum)
-        snapcur.load_halos(['Mvir', 'Msub'])
+        if(load_halo_mass):
+            snapcur.load_halos(['Mvir', 'Msub'])
+        else:
+            snapcur.load_halos(['Npart'])            
         haloId2hostId = galaxy.read_sopar(snapcur._path_sopar, as_dict=True)
         haloId2progId = find_progenitors(snap, snapcur)
         haloId2hostId[0] = 0
@@ -77,8 +83,10 @@ def find_all_previous_progenitors(snap, overwrite=False):
         df = pd.merge(df, snapcur.halos, how='left', left_on='progId', right_index=True)
         progtable = df.copy() if (progtable is None) else pd.concat([progtable, df])
     progtable.index.rename('haloId', inplace=True)
+    if(load_halo_mass == False):
+        progtable.Npart = progtable.Npart.fillna(0).astype('int')
     progtable.reset_index().to_csv(fout, index=False,
-                                   columns=schema_progtable['columns'])
+                                   columns=schema['columns'])
     return progtable
 
 def find_progenitors(snap, snap_early):
@@ -105,6 +113,11 @@ def find_progenitors(snap, snap_early):
         Note: not all haloId will find a progenitor.
     '''
 
+    assert(snap.snapnum >= snap_early.snapnum), "snap_early must be at an earlier time than snap."
+    if(snap.snapnum == snap_early.snapnum):
+        haloId2progId = {i:i for i in range(1, snap.ngals+1)}
+        return haloId2progId
+                
     snap.load_dark_particles()
     snap_early.load_dark_particles()
     dp = snap.dp[snap.dp.haloId > 0].set_index('PId')
@@ -124,7 +137,7 @@ def find_progenitors(snap, snap_early):
             haloId2progId[i] = 0
     return haloId2progId
 
-def build_haloId_hostId_map(snap):
+def build_haloId_hostId_map(snap, overwrite=False):
     '''
     Build maps between haloId and hostId for each snapshot before the snapshot
     parsed in the arguments.
@@ -138,7 +151,12 @@ def build_haloId_hostId_map(snap):
     hostmap: pandas.DataFrame
         Columns: snapnum*, haloId*, hostId
     '''
-    hostmap = dict()
+    fout = os.path.join(snap._path_workdir, "hostmap.csv")
+    if(os.path.exists(fout) and overwrite == False):
+        talk("Read existing hostmap file: {}".format(fout), 'normal')
+        hostmap = pd.read_csv(fout, header=0)
+        return hostmap.set_index(['snapnum', 'haloId'])
+    
     frames = []
     for snapnum in range(0, snap.snapnum+1):
         snapcur = snapshot.Snapshot(snap.model, snapnum)
@@ -149,6 +167,7 @@ def build_haloId_hostId_map(snap):
                            'hostId':haloId2hostId.values()})
         frames.append(df)
     hostmap = pd.concat(frames, axis=0).set_index(['snapnum', 'haloId'])
+    hostmap.to_csv(fout)
     return hostmap
 
 def get_relationship_between_halos(haloIdTarget, haloId, snapnum, progtable, hostmap):

@@ -7,9 +7,11 @@ import json
 import os
 import sys
 from config import cfg
+import glob
 
 import pandas as pd
 import pyarrow as pa
+import pyarrow.parquet as pq
 
 path_schema = os.path.join(cfg['Paths']['pygizmo'], cfg['Schema']['galaxy'])
 
@@ -64,6 +66,25 @@ def talk(text, verbose_level='always', err=False):
         return
     dest = sys.stderr if err else sys.stdout
     print(text, file=dest)
+
+def read_parquet_schema(source):
+    """
+    Return the schema of a parquet file.
+
+    Returns
+    -------
+    schemaParquet: pandas.DataFrame
+        Columns: column, pa_dtype
+    """
+    # Ref: https://stackoverflow.com/a/64288036/
+    if(os.path.isdir(source)):
+        talk("Parquet source is a directory, search within the folder.", "quiet")
+        source = glob.glob(source+"/*.parquet")[0]
+    schema = pq.read_schema(source, memory_map=True)
+    schema = pd.DataFrame(({"column": str(name), "pa_dtype": str(pa_dtype)} for name, pa_dtype in zip(schema.names, schema.types)))
+    schema = schema.reindex(columns=["column", "pa_dtype"], fill_value=pd.NA)
+    # Ensures columns in case the parquet file has an empty dataframe.
+    return schema
 
 def pyarrow_read_schema(schema_json):
     '''
