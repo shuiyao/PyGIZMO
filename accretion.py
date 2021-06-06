@@ -24,8 +24,6 @@ import pyarrow.parquet as pq
 import pdb
 import simulation
 
-# TODO: Aggregate
-
 schema_gptable = {'columns':['PId','snapnum','Mass','haloId'],
                   'dtypes':{'PId':'int64',
                             'snapnum':'int32',
@@ -283,7 +281,7 @@ hostmap = build_haloId_hostId_map(snap, overwrite=REFRESH)
 # Time-consuming, but only needs one-go for each simulation
 inittable = sim.build_inittable(overwrite=False)
 sim.build_phewtable(overwrite=False)
-sim.compute_mloss_partition_by_pId(overwrite=False, spark=spark)
+sim.compute_mloss_partition_by_pId(overwrite=False)
 
 phewtable = sim.load_phewtable()
 
@@ -305,7 +303,17 @@ pptable.loc[(pptable.snapfirst==30)&(pptable.birthId==2), 'birthTag'] = 'SAT'
 grps = pptable.groupby(['snapnum', 'haloId'])
 x = grps.apply(lambda x: x[['Mloss','birthTag']].groupby('birthTag').sum()).reset_index('birthTag')
 y = pd.merge(gptable, x, how='left', left_on=['snapnum', 'haloId'], right_on=['snapnum', 'haloId'])
+grps = y.groupby(['PId','snapnum'])
+z = grps.apply(lambda x : pd.DataFrame({
+    'PId': x.PId,
+    'snapnum': x.snapnum,
+    'birthTag':x.birthTag,
+    'Mgain':x.Mgain * x.Mloss / x.Mloss.sum()})
+)
+r = pd.concat([y[['PId','snapnum']], z], axis=1)
+ans = r.groupby(['PId', 'birthTag']).sum()
 
+# Check 604552
 
 # haloId
 # -> pptable + birthtag
