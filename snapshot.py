@@ -8,6 +8,7 @@ import numpy as np
 import pandas as pd
 import pdb
 import galaxy
+import C
 import warnings
 
 import units
@@ -187,20 +188,6 @@ class Snapshot(object):
                 cols[field] = hdf5part[hdf5field][:,elements.index(field)].astype(dtype)
         return pd.DataFrame(cols)
             
-    def _compute_derived_fields(self, fields_derived):
-        cols = {}
-        if('logT' in fields_derived):
-            talk("Calculating for derived field: logT ...", 'quiet')
-            ne = self.gp['Ne']
-            u = self.gp['U']
-            xhe = self.gp['Y']
-            mu= (1.0 + 4.0 * xhe) / (1.0 + ne + xhe)
-            # u = (3/2)kT/(mu*m_H)
-            logT = np.log10(u * self._units_gizmo.u * mu * pc.mh /
-                            (1.5 * pc.k))
-            cols['logT'] = logT.astype('float32')
-        self.gp = pd.concat([self.gp, pd.DataFrame(cols)], axis=1)
-
     def load_galaxies(self, fields=None, log_mass=True):
         self.gals = galaxy.read_stat(self._path_stat)
         if(fields is not None):
@@ -232,6 +219,58 @@ class Snapshot(object):
                 self.halos.drop(field, axis=1, inplace=True)
         self._n_gals = self.halos.shape[0]
         talk('Load {} halos ...'.format(self._n_gals), 'quiet')
+
+    def load_phase_diagram(self, ncells_x=256, ncells_y=256, ions=False, overwrite=False):
+        '''
+        Build/Load 2D phase diagram from the simulation data.
+
+        Parameters
+        ----------
+        ncells_x: int. Default=256
+            Number of cells on the x-axis (log density)
+        ncells_y: int. Default=256
+            Number of cells on the y-axis (log temperature)
+        ions: boolean. Default=False
+            Whether or not to compute the ion fractions.
+        overwrite: boolean. Default=False
+
+        Return
+        ------
+        df: pandas.DataFrame.
+
+        Outputs
+        -------
+        If ions==True, tabion_???.csv; else tabmet_???.csv
+        '''
+
+        fprefix = "tabion" if (ions) else "tabmet"
+        fout = os.path.join(self._path_workdir,
+                            "{}_{:03d}.csv".format(fprefix, self.snapnum))
+        if(os.path.exists(fout) and overwrite==False):
+            talk("Load existing phase diagram.", "normal")
+            return pd.read_csv(fout)
+        
+        C.cpygizmo.build_phase_diagram(
+            C.c_char_p(self._path_model.encode('utf-8')),
+            C.c_char_p(self._path_workdir.encode('utf-8')),            
+            C.c_int(self.snapnum),
+            C.c_int(ncells_x),
+            C.c_int(ncells_y))
+        return pd.read_csv(fout)        
+
+    def _compute_derived_fields(self, fields_derived):
+        cols = {}
+        if('logT' in fields_derived):
+            talk("Calculating for derived field: logT ...", 'quiet')
+            ne = self.gp['Ne']
+            u = self.gp['U']
+            xhe = self.gp['Y']
+            mu= (1.0 + 4.0 * xhe) / (1.0 + ne + xhe)
+            # u = (3/2)kT/(mu*m_H)
+            logT = np.log10(u * self._units_gizmo.u * mu * pc.mh /
+                            (1.5 * pc.k))
+            cols['logT'] = logT.astype('float32')
+        self.gp = pd.concat([self.gp, pd.DataFrame(cols)], axis=1)
 
     @property
     def model(self):
@@ -358,4 +397,5 @@ Index(['PId', 'Tmax'], dtype='object')
 Index(['PId', 'Tmax', 'Ne'], dtype='object')
 '''
 
-snap = Snapshot("l25n144-test", 33)
+model = "l25n144-test"
+snap = Snapshot(model, 108)
