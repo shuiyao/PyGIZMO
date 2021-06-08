@@ -40,6 +40,9 @@ def compute_halo_gas_components(snap, Tcut=None):
     return halos
 
 def radial_profile():
+    ''' 
+    Compute radial profiles of a galactic halo.
+    '''
     pass
 
 def wind_fraction():

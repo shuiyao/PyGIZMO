@@ -1,7 +1,7 @@
 '''
 General utilities.
 '''
-__all__ = ['path_schema', 'cumhist', 'talk', 'load_timeinfo_for_snapshots']
+__all__ = ['path_schema', 'cumhist', 'talk', 'load_timeinfo_for_snapshots', 'rcol']
 
 import json
 import os
@@ -115,3 +115,56 @@ def load_timeinfo_for_snapshots(fredz="redshift.txt"):
     df_redz = pd.read_csv(fredz, sep='\s+', header=0)
     df_redz = df_redz.drop("snapnum", axis=1)
     return df_redz
+
+def rcol(filename="", columns=[], intcolumns=[], linestart=0, linetotal=0, separator="", verbose=True):
+    '''
+    Read columns from a plain text file.
+    '''
+    if(filename=="help" or filename=="" or len(columns)==0):
+        print ("Usage:")
+        print ("rcol(filename, [], intcolumns=[], linestart=0)")
+        print ("Example:")
+        print ("gid, mstar = rcol(fname, [0,2], [0], linestart=1)")
+        return
+    if(verbose == True):
+        print ("Reading File: ", filename)
+    linecount = 0
+    f = open(filename, "r")
+    if linestart > 0:
+        for i in range(linestart):
+            f.readline()
+    cols = []
+    for i in range(len(columns)):
+        cols.append([])
+    for line in f: # Each line
+        col_i = 0
+        if(separator == ""):
+            spt = line.split()
+        else:
+            spt = line.split(separator)
+        for c in columns:
+            cols[col_i].append(spt[c])
+            col_i = col_i + 1
+        linecount = linecount + 1
+        if(linetotal > 0):
+            if(linecount > linetotal):
+                break
+    f.close()
+    if(verbose == True):
+        print ("Formatting Output:")
+    intcols = [0] * len(columns)
+    for i in intcolumns:
+        intcols[i] = 1
+    j = 0
+    for col in cols:
+        if(intcols[j] == 1):
+            for i in range(linecount):
+                col[i] = int(col[i])
+        if(intcols[j] == 0):
+            for i in range(linecount):
+                col[i] = float(col[i])
+        j = j + 1
+    if len(cols) > 1:
+        return cols
+    else:
+        return cols[0]

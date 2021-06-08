@@ -1,12 +1,14 @@
-#from .astroconst import pc, ac
+'''
+Define the unit system to use.
+'''
+
 from astroconst import pc, ac
 from numpy import exp, log, pi, sqrt
 import configparser
+import config 
 
 # Gadget Units in comoving c.g.s
-cfg = configparser.ConfigParser(inline_comment_prefixes=('#'))
-cfg.read('pygizmo.cfg')
-UNITS = cfg['Units']
+UNITS = config.cfg['Units']
 
 UNIT_GADGET_L = float(UNITS['UnitLength_in_cm'])
 UNIT_GADGET_M = float(UNITS['UnitMass_in_g'])
