@@ -69,11 +69,30 @@ class Snapshot(object):
         self._units_gizmo = units.Units('gadget')
 
     @classmethod
-    def from_file(path_hdf5):
+    def from_file(cls, path_hdf5):
         '''
         Create an Snapshot instance directly from the HDF5 file.
+
+        Parameters
+        ----------
+        path_hdf5: str.
+            Complete path to the HDF5 format snapshot.
         '''
-        pass
+        assert(isinstance(path_hdf5, str)), "path_hdf5 must be complete path to the HDF5 file."
+        assert(os.path.exists(path_hdf5)), "{} is not found.".format(path_hdf5)
+
+        try:
+            basename = os.path.basename(path_hdf5)
+            suffix = os.path.splitext(basename)[-1]
+            if(suffix != '.hdf5'):
+                warnings.warn("path_hdf5 is likely not a HDF5 file.")
+            snapstr = os.path.splitext(basename)[-2].split(sep='_')[-1]
+            snapnum = int(snapstr)
+            model = path_hdf5.split(sep='/')[-2]
+            return cls(model, snapnum)
+        except:
+            raise IOError("Can not parse file path: {}.", path_hdf5)
+        
 
     def _get_fields_todo(self, fields, fields_exist=set()):
         if(isinstance(fields, list)): fields = set(fields)
@@ -112,10 +131,12 @@ class Snapshot(object):
         
         # Field Type: Galaxy/Halo Identifiers
         if('galId' in fields['all']):
-            gids = galaxy.read_grp(self._path_grp, n_gas=self._n_gas, gas_only=True)
+            gids = galaxy.read_grp(self._path_grp, n_gas=self._n_gas,
+                                   gas_only=True)
             self.gp = pd.concat([self.gp, gids], axis=1)
         if('haloId' in fields['all'] or 'hostId' in fields['all']):
-            hids = galaxy.read_sogrp(self._path_sogrp, n_gas=self._n_gas, gas_only=True)
+            hids = galaxy.read_sogrp(self._path_sogrp, n_gas=self._n_gas,
+                                     gas_only=True)
             # At early redshifts, no galaxy has formed yet. gids is empty.
             if(hids.empty):
                 hids['haloId'] = pd.Series(np.zeros(self.ngas, dtype=int))
@@ -128,6 +149,7 @@ class Snapshot(object):
         '''
         if(isinstance(fields, str)): fields = [fields]
         if(isinstance(fields, list)): fields = set(fields)
+        
         fields_exist = set() if self.sp is None else set(self.sp.columns)
         fields = self._get_fields_todo(fields, fields_exist)
         df = self._load_hdf5_fields('star', fields['hdf5'], fields['metals'])
@@ -203,6 +225,7 @@ class Snapshot(object):
 
     def load_galaxies(self, fields=None, log_mass=True):
         self.gals = galaxy.read_stat(self._path_stat)
+
         if(fields is not None):
             fields = set(fields)
             to_keep = fields & set(self.gals.columns)
@@ -210,10 +233,12 @@ class Snapshot(object):
                 warnings.warn('These fields are not found in the .stat file: {}'.
                               format(fields ^ to_keep))
             self.gals = self.gals[to_keep]
+            
         if(log_mass == True):
             for field in self.gals.columns.intersection(set(['Mgal', 'Mgas', 'Mstar'])):
                 self.gals['log'+field] = np.log10(self.gals[field] * self._units_tipsy.m / ac.msolar)
                 self.gals.drop(field, axis=1, inplace=True)
+
         self._n_gals = self.gals.shape[0]
         talk('Load {} galaxies ...'.format(self._n_gals), 'quiet')
 

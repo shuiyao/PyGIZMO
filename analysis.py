@@ -75,15 +75,15 @@ def derive_galaxy_properties(snap, oxygen=True, sfr_weighted=True, save=False):
         columns: Zgal, LogMgal, LogMgas, LogMstar, Sfr.
         Several plotting scripts will use this output.
     '''
-    Metal = 'O' if (oxygen) else 'Zmet'
-    Weight = 'Sfr' if (sfr_weighted) else 'Mass'
+    element = 'O' if (oxygen) else 'Zmet'
+    weight = 'Sfr' if (sfr_weighted) else 'Mass'
 
-    snap.load_gas_particles(['galId',Weight,Metal])
+    snap.load_gas_particles(['galId',weight,element])
     snap.load_galaxies(['Mgal','Mgas','Mstar','Sfr'])
 
-    snap.gp['norm'] = snap.gp[Weight] * snap.gp[Metal]
+    snap.gp['norm'] = snap.gp[weight] * snap.gp[element]
     gal_attrs = snap.gp.groupby('galId').sum()
-    gal_attrs['Zgal'] = gal_attrs['norm'] / gal_attrs[Weight]
+    gal_attrs['Zgal'] = gal_attrs['norm'] / gal_attrs[weight]
 
     gal_attrs = pd.merge(gal_attrs['Zgal'],
                          snap.gals[['logMgal','logMgas','logMstar','Sfr']],

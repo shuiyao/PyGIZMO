@@ -1,0 +1,5 @@
+class LinePlot():
+    '''
+    BaseClass for line-type plot, such as the galactic stellar mass functions
+    (GSMFs), mass-metallicity relations (MZRs)
+    '''
