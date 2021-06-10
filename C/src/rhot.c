@@ -5,6 +5,7 @@
 #include "loadhdf5.h"
 #include "gadgetdefs.h"
 
+#ifndef _GRID_2D
 #define NUMOFNODES_X 256
 #define NUMOFNODES_Y 256
 #define OMEGABARYON 0.045
@@ -12,6 +13,7 @@
 #define XMAX 7.0
 #define YMIN 3.0
 #define YMAX 8.0
+#endif
 
 typedef struct NodesStruct {
   float x;
@@ -31,6 +33,7 @@ int LoadGrid(int nx, int ny)
   int i, ix, iy;
   float dx, dy, x;
   int ncells;
+
   ncells = nx * ny;
   nodes_array = (struct NodesStruct *)
     malloc(ncells*sizeof(*nodes_array));
@@ -51,15 +54,16 @@ int LoadGrid(int nx, int ny)
   return 1;
 }
 
-void GetFilenames(char *snapbase, int snapnum)
+void GetFilenames(char *snapbase, char *outputbase, int snapnum)
 {
   char snapstr[4];
   get_snap_string(snapnum, snapstr);
 #ifdef IONS
-  sprintf(outfilename, "tabion_%s.csv", snapstr);
+  sprintf(outfilename, "%s/tabion_%s.csv", outputbase, snapstr);
 #else  
-  sprintf(outfilename, "tabmet_%s.csv", snapstr);
-#endif  
+  sprintf(outfilename, "%s/tabmet_%s.csv", outputbase, snapstr);
+#endif
+  sprintf(infilename, "%s/snapshot_%s", snapbase, snapstr);
   fprintf(stdout, "Infile: %s\n", infilename);
 }
 
@@ -104,7 +108,7 @@ void ReadData(char *filename)
   InitIons(1./header.time - 1.);  // Including load_fraction_tables()
   /* fHI = IonFrac(1.e3, 10.0*MHYDR, 0); // test */
 #endif  
-  
+
   for(i=0;i<gheader.npart[0];i++) 
     {
       rho = P[i].Rho * UNIT_M / pow(UNIT_L, 3) * gheader.HubbleParam * gheader.HubbleParam; // density in c.g.s units
@@ -139,7 +143,7 @@ void WriteGrid(char *filename)
   FILE *outfile;
   int ix, iy, i;
   outfile = fopen(filename, "w");
-  fprintf(outfile, "LogRho,LogT,count,Mass,Ztot");
+  fprintf(outfile, "LogRho,LogT,count,Mass,Zmet");
 #ifdef IONS
   fprintf(outfile, ",MHI,MCIV,MOVI,MNeVIII,MSiIV");
 #endif
@@ -166,9 +170,13 @@ void WriteGrid(char *filename)
   fclose(outfile);
 }
 
-int build_phase_diagram(char *snapbase, int snapnum, int ncells_x, int ncells_y)
+int build_phase_diagram(char *snapbase, char *outputbase, int snapnum, int nx, int ny)
 {
-  GetFilenames(snapbase, snapnum);
+  ncells_x = nx;
+  ncells_y = ny;
+  fprintf(stdout, "Generating %d x %d grid.\n", ncells_x, ncells_y);  
+  fprintf(stdout, "snapbase: %s\n", snapbase);
+  GetFilenames(snapbase, outputbase, snapnum);
   LoadGrid(ncells_x, ncells_y);
   ReadData(infilename);
   WriteGrid(outfilename);
