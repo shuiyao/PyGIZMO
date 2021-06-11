@@ -1,0 +1,15 @@
+class Map2D():
+    def __init__():
+        pass
+
+    def add_density_map():
+        pass
+
+    def add_halos():
+        pass
+
+    def add_galaxies():
+        pass
+
+    
+    

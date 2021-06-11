@@ -1,7 +1,7 @@
 OPT     = -DH5_USE_16_API
 
 # Default parameters for the 2D binning
-OPT    += -D_GRID2D
+OPT    += -DGRID2D_PARAMS
 OPT    += -DNUMOFNODES_X=256    # number of cells (x) 
 OPT    += -DNUMOFNODES_Y=256    # number of cells (y) 
 OPT    += -DXMIN=-1.5           # Lower limit (x), log(rho/rho_crit) 

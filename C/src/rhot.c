@@ -4,31 +4,15 @@
 #include <math.h>
 #include "loadhdf5.h"
 #include "gadgetdefs.h"
+#include "grid2d.h"
 
-#ifndef _GRID_2D
-#define NUMOFNODES_X 256
-#define NUMOFNODES_Y 256
-#define OMEGABARYON 0.045
-#define XMIN -1.5
-#define XMAX 7.0
-#define YMIN 3.0
-#define YMAX 8.0
-#endif
-
-typedef struct NodesStruct {
-  float x;
-  float y;
-  int z;
-  double m;
-  double met;
-} NodesStruct;
-NodesStruct *nodes_array;
+struct NodesStruct *nodes_array;
 
 int ncells_x;
 int ncells_y;
 char infilename[200], outfilename[200];
 
-int LoadGrid(int nx, int ny)
+int load_grid(int nx, int ny)
 {
   int i, ix, iy;
   float dx, dy, x;
@@ -67,7 +51,7 @@ void GetFilenames(char *snapbase, char *outputbase, int snapnum)
   fprintf(stdout, "Infile: %s\n", infilename);
 }
 
-int GridCount(float x, float y, float m, float metc, float meto)
+int grid_count(float x, float y, float m, float metc, float meto)
 {
   int ix, iy, i;
   ix = (int)((x - XMIN) / (XMAX - XMIN) * ncells_x);
@@ -123,7 +107,7 @@ void ReadData(char *filename)
       fNeVIII = 0.0;
       fSiIV = 0.0;
       rho *= a3inv;
-      fHI = IonFrac(LogT, rho, 0); // Global Variable that enters GridCount
+      fHI = IonFrac(LogT, rho, 0); // Global Variable that enters grid_count
       fCIV = IonFrac(LogT, rho, 3);
       fOVI = IonFrac(LogT, rho, 5);
       fNeVIII = IonFrac(LogT, rho, 6);      
@@ -132,7 +116,7 @@ void ReadData(char *filename)
 #endif
       LogT = log10(LogT);
       Mass = P[i].Mass;
-      Nout += GridCount(LogRho, LogT, Mass, P[i].metal[2], P[i].metal[4]);
+      Nout += grid_count(LogRho, LogT, Mass, P[i].metal[2], P[i].metal[4]);
       Ntot ++;
     }
   printf("Data Reading Done, Nout/Ntot = %d/%d\n", Nout, Ntot);
@@ -177,7 +161,7 @@ int build_phase_diagram(char *snapbase, char *outputbase, int snapnum, int nx, i
   fprintf(stdout, "Generating %d x %d grid.\n", ncells_x, ncells_y);  
   fprintf(stdout, "snapbase: %s\n", snapbase);
   GetFilenames(snapbase, outputbase, snapnum);
-  LoadGrid(ncells_x, ncells_y);
+  load_grid(ncells_x, ncells_y);
   ReadData(infilename);
   WriteGrid(outfilename);
   free(nodes_array);
