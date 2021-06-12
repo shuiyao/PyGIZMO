@@ -18,7 +18,7 @@ import config
 from utils import talk
 cfg = config.cfg
 
-path_schema = "HDF5schema.csv"
+path_schema = "data/HDF5schema.csv"
 hdf5schema = pd.read_csv(path_schema, header=0).set_index('FieldName')
 PATHS = cfg['Paths']
 
@@ -107,12 +107,14 @@ class Snapshot(object):
         # Only keep the fields that is not existed
         fields = fields ^ (fields & fields_exist)
         fields_hdf5 = hdf5schema.index.intersection(fields)
+        fields_pos = fields & set(['x', 'y', 'z'])        
         elements = cfg['Simulation']['elements'].split(sep=',')
         fields_metals = fields & set(elements)
         talk("Fields to be derived: {}".format(fields_derived), 'quiet')
         talk("Fields to load: {}".format(fields), 'quiet')
         return {'all':fields,
                 'hdf5':fields_hdf5,
+                'pos':fields_pos,                
                 'metals':fields_metals,
                 'derived':fields_derived,
                 'todrop':fields_todrop}
@@ -124,7 +126,7 @@ class Snapshot(object):
         if(isinstance(fields, list)): fields = set(fields)
         fields_exist = set() if self.gp is None else set(self.gp.columns)
         fields = self._get_fields_todo(fields, fields_exist)
-        df = self._load_hdf5_fields('gas', fields['hdf5'], fields['metals'])
+        df = self._load_hdf5_fields('gas', fields['hdf5'], fields['pos'], fields['metals'])
         if(drop == True and fields['todrop'] != set()):
             self.gp.drop(fields['todrop'], axis=1, inplace=True)
         self.gp = df if self.gp is None else pd.concat([self.gp, df], axis=1)
@@ -153,7 +155,7 @@ class Snapshot(object):
         
         fields_exist = set() if self.sp is None else set(self.sp.columns)
         fields = self._get_fields_todo(fields, fields_exist)
-        df = self._load_hdf5_fields('star', fields['hdf5'], fields['metals'])
+        df = self._load_hdf5_fields('star', fields['hdf5'], fields['pos'], fields['metals'])
         if(drop == True and fields['todrop'] != set()):
             self.sp.drop(fields['todrop'], axis=1, inplace=True)
         self.sp = df if self.sp is None else pd.concat([self.sp, df], axis=1)
@@ -177,14 +179,14 @@ class Snapshot(object):
         if(self.dp is not None and force_reload == False):
             talk("Dark particles already loaded. Use force_reload to reload.", 'quiet')
             return
-        df = self._load_hdf5_fields('dark', ['PId'], [])
+        df = self._load_hdf5_fields('dark', ['PId'], [], [])
         hids = galaxy.read_sogrp(self._path_sogrp)
         hids = hids[self.ngas:self.ngas+self.ndark].reset_index()
         # Use the haloId and not the parentId here.
         # parentId has subsumed satellite galaxies
         self.dp = pd.concat([df, hids['haloId'], hids['hostId']], axis=1)
 
-    def _load_hdf5_fields(self, ptype, fields_hdf5, fields_metals):
+    def _load_hdf5_fields(self, ptype, fields_hdf5, fields_pos, fields_metals):
         '''
         '''
         if(isinstance(ptype, int)):
@@ -208,6 +210,12 @@ class Snapshot(object):
             dtype = hdf5schema.loc['Metals'].PandasType
             for field in fields_metals:
                 cols[field] = hdf5part[hdf5field][:,elements.index(field)].astype(dtype)
+            # Now extract the pos field
+            posidx = {'x':0, 'y':1, 'z':2}
+            hdf5field = hdf5schema.loc['Pos'].HDF5Field
+            dtype = hdf5schema.loc['Pos'].PandasType
+            for field in fields_pos:
+                cols[field] = hdf5part[hdf5field][:,posidx[field]].astype(dtype)
         return pd.DataFrame(cols)
             
     def load_galaxies(self, fields=None, log_mass=True):
@@ -231,8 +239,11 @@ class Snapshot(object):
 
     def load_halos(self, fields=None, log_mass=True):
         self.halos = galaxy.read_sovcirc(self._path_sovcirc)
+        fields_pos = set()
         if(fields is not None):
             fields = set(fields)
+            fields_pos = fields & set(['x','y','z'])
+            fields = fields ^ (fields & fields_pos)
             to_keep = fields & set(self.halos.columns)
             if(fields ^ to_keep != set()):
                 warnings.warn('These fields are not found in the .sovcirc file: {}'.
@@ -242,6 +253,11 @@ class Snapshot(object):
             for field in self.halos.columns.intersection(set(['Mvir', 'Msub'])):
                 self.halos['log'+field] = np.log10(self.halos[field] / self._h)
                 self.halos.drop(field, axis=1, inplace=True)
+        if(fields_pos is not None):
+            gals = galaxy.read_stat(self._path_stat)
+            gals = gals[fields_pos]
+            # gals = pd.DataFrame({'x':gals.xbound, 'y':gals.ybound, 'z':gals.zbound})
+            self.halos = pd.concat([self.halos, gals], axis=1)
         self._n_gals = self.halos.shape[0]
         talk('Load {} halos ...'.format(self._n_gals), 'quiet')
 
@@ -296,6 +312,12 @@ class Snapshot(object):
                             (1.5 * pc.k))
             cols['logT'] = logT.astype('float32')
         self.gp = pd.concat([self.gp, pd.DataFrame(cols)], axis=1)
+
+    def _transform_coordinates(self, x):
+        '''
+        Transform between Tipsy coordinates and GIZMO coordinates
+        '''
+        return (x + 0.5) * self.boxsize
 
     @property
     def model(self):

@@ -117,9 +117,13 @@ class PhaseDiagram():
 
     def _set_ticks(self):
         self.ax.set_xticks([self._xnorm(x) for x in self.xticks])
-        self.ax.set_xticklabels(["-1.0", "1.0", "3.0", "5.0", "7.0"])
+        labels = ["{:-3.1f}".format(x) for x in self.xticks]
+        self.ax.set_xticklabels(labels)
+        # self.ax.set_xticklabels(["-1.0", "1.0", "3.0", "5.0", "7.0"])
         self.ax.set_yticks([self._ynorm(y) for y in self.yticks])
-        self.ax.set_yticklabels(["3.0", "4.0", "5.0", "6.0", "7.0", "8.0"])
+        labels = ["{:-3.1f}".format(y) for y in self.yticks]        
+        self.ax.set_yticklabels(labels)
+        # self.ax.set_yticklabels(["3.0", "4.0", "5.0", "6.0", "7.0", "8.0"])
         self.ax.tick_params(direction="in")
 
     def add_particles(self, particles):
