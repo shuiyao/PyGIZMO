@@ -370,6 +370,26 @@ class Snapshot(object):
         self.load_galaxies(log_mass=False)
         return int(self._n_gals)
 
+    def get_gas_particles_in_galaxy(self, galId):
+        '''
+        Get a list of particle IDs for all gas particles that belong to a given
+        halo. 
+
+        Parameters
+        ----------
+        galId: int.
+            The unique Id of the halo.
+
+        Returns
+        -------
+        pIdlist: list.
+        '''
+
+        self.load_gas_particles(['PId','galId'])
+        gp = self.gp.query('galId == @galId')
+        talk("{} gas particles loaded from galaxy #{}".format(gp.shape[0], galId), 'normal')
+        return list(gp.PId)
+
     def get_gas_particles_in_halo(self, haloId, include_ism=False):
         '''
         Get a list of particle IDs for all gas particles that belong to a given

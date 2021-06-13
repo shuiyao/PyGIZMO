@@ -6,6 +6,19 @@ gas particles. Three primary categories are cold accretion, hot accretion and
 wind re-accretion. The third category, in particular, requires tracking when 
 and where the gas particles gain their mass from galactic winds and is most 
 challenging.
+
+Test case for the wind tracking engine
+--------------------------------
+model: l25n144-test
+snapnum: 108
+HaloId = 1185:
+  + Isolated galaxy
+  + satellites (1219, 1086)
+HaloId = 715:
+  + In a dense environment
+  + Many satellites
+HaloId = 568:
+  + In a cluster environment
 '''
 
 import numpy as np
@@ -30,11 +43,12 @@ schema_gptable = {'columns':['PId','snapnum','Mass','haloId'],
                             'Mass':'float32',
                             'haloId':'int32'}
 }
-schema_pptable = {'columns':['PId','haloId','snapnum','Mloss','birthId'],
+schema_pptable = {'columns':['PId','haloId','snapnum','Mloss','snapfirst','birthId'],
                   'dtypes':{'PId':'int64',
                             'snapnum':'int32',
                             'haloId':'int32',
                             'Mloss':'float64',
+                            'snapfirst':'int32',                            
                             'birthId':'int32'}
 }
 
@@ -79,7 +93,7 @@ def build_pptable(gptable, inittable, phewtable, overwrite=False):
     Parameters
     ----------
     gptable: pandas.DataFrame or Spark DataFrame
-        Columns: PId*, snapnum, Mass, haloId
+        Columns: PId*, snapnum, Mass, haloId, ...
         Gas particles whose histories we are tracking.
         Needed to find the list of halos for processing
     inittable: pandas.DataFrame or Spark DataFrame
@@ -111,8 +125,7 @@ def build_pptable(gptable, inittable, phewtable, overwrite=False):
     halos = compile_halos_to_process(gptable)
 
     # Find all PhEW particles that ever appeared in these halos
-    # Computionally intensive.
-    pptable = pd.merge(halos, phewtable, how='left',
+    pptable = pd.merge(halos, phewtable, how='inner',
                        left_on=['snapnum', 'haloId'],
                        right_on=['snapnum', 'haloId'])
     # pptable: snapnum, haloId, PId, Mloss
@@ -134,12 +147,87 @@ def define_halo_relationship(progId, progHost, haloId, hostId):
     if(progHost == hostId): return "SIB"
     return "IGM"
 
-def assign_birthtags_to_halos(haloIdTarget, gptable, progtable, hostmap):
+def assign_relations_to_halos(haloIdTarget, halos, progtable, hostmap):
     '''
     Map from the unique halo identifier (snapnum, haloId) to a descriptor for 
     its relationship with another halo (haloIdTarget) at a later time.
     In the accretion tracking engine, the table is built iteratively for each 
     halo of interest.
+
+    Parameters
+    ----------
+    haloIdTarget: int.
+        The haloId of the halo in the current snapshot.
+    halos: pandas.DataFrame
+        Columns: haloId*, snapnum*
+        Halos uniquely identified with the (haloId, snapnum) pair
+    progtable: pandas.DataFrame.
+        Columns: haloId*, snapnum, progId, hostId, logMvir, logMsub
+        Output of progen.find_all_previous_progenitors().
+        Defines the progenitors of any halo in any previous snapshot.
+    hostmap: pandas.DataFrame.
+        Columns: snapnum*, haloId*, hostId
+        Output of progen.build_haloId_hostId_map()
+        Mapping between haloId and hostId for each snapshot.
+
+    Returns:
+    relation: pandas.DataFrame
+        Columns: snapnum*, haloId*, relation
+        Map between a halo (MultiIndex(snapnum, haloId)) to the relation, which 
+        defines its relation to another halo (haloIdTarget) at a later time.
+    '''
+
+    progsTarget = progtable.loc[progtable.index == haloIdTarget,
+                                ['snapnum', 'progId', 'hostId']]
+    progsTarget.rename(columns={'hostId':'progHost'}, inplace=True)
+    
+    halos = halos[['snapnum', 'haloId']].set_index(['snapnum', 'haloId'])
+
+    # Find the hostId of each halo in its snapshot
+    halos = halos.join(hostmap, how='left') # (snapnum, haloId) -> hostId
+    halos = halos.reset_index()
+
+    halos = pd.merge(halos, progsTarget, how='left',
+                     left_on = 'snapnum', right_on = 'snapnum')
+    halos['relation'] = halos.apply(lambda x : define_halo_relationship(
+        x.progId, x.progHost, x.haloId, x.hostId), axis=1)
+    
+    return halos[['snapnum','haloId','relation']].set_index(['snapnum', 'haloId'])
+
+def add_relation_field_to_gptable(haloIdTarget, gptable, progtable, hostmap):
+    '''
+    Add a field ('relation') in the gptable that defines the relation between 
+    haloIdTarget and any halo that hosts a gas particle in the gptable.
+
+    Parameters
+    ----------
+    haloIdTarget: int.
+        The haloId of the halo in the current snapshot.
+    gptable: pandas.DataFrame or Spark DataFrame
+    progtable: pandas.DataFrame.
+        Columns: haloId*, snapnum, progId, hostId, logMvir, logMsub
+        Output of progen.find_all_previous_progenitors().
+        Defines the progenitors of any halo in any previous snapshot.
+    hostmap: pandas.DataFrame.
+        Columns: snapnum*, haloId*, hostId
+        Output of progen.build_haloId_hostId_map()
+        Mapping between haloId and hostId for each snapshot.
+
+    Returns:
+    gptable: pandas.DataFrame
+    '''
+
+    halos = compile_halos_to_process(gptable, ['snapnum','haloId'])
+    halos = assign_relations_to_halos(haloIdTarget, halos, progtable, hostmap)
+    gptable = pd.merge(gptable, halos, how='left',
+                       left_on=['snapnum','haloId'], right_index=True)
+    gptable['relation'] = gptable['relation'].fillna('IGM')
+    return gptable
+
+def add_birthtag_field_to_pptable(haloIdTarget, pptable, progtable, hostmap):
+    '''
+    Add a field ('birthTag') in the pptable that defines the relation between 
+    haloIdTarget and the halo where a PhEW particle was born.
 
     Parameters
     ----------
@@ -158,29 +246,16 @@ def assign_birthtags_to_halos(haloIdTarget, gptable, progtable, hostmap):
         Mapping between haloId and hostId for each snapshot.
 
     Returns:
-    birthtags: pandas.DataFrame
-        Columns: snapnum*, haloId*, birthTag
-        Map between a halo (MultiIndex(snapnum, haloId)) to the birthTag, which 
-        defines its relation to another halo (haloIdTarget) at a later time.
+    pptable: pandas.DataFrame
     '''
 
-    progsTarget = progtable.loc[progtable.index == haloIdTarget,
-                                ['snapnum', 'progId', 'hostId']]
-    progsTarget.rename(columns={'hostId':'progHost'}, inplace=True)
-    
-    halos = compile_halos_to_process(pptable, ['snapfirst','birthId'])\
-        .set_index(['snapnum', 'haloId'])
+    halos = compile_halos_to_process(pptable, ['snapfirst','birthId'])
+    halos = assign_relations_to_halos(haloIdTarget, halos, progtable, hostmap)
+    pptable = pd.merge(pptable, halos, how='left',
+                       left_on=['snapfirst','birthId'], right_index=True)
+    pptable.rename(columns={'relation':'birthTag'}, inplace=True)
+    return pptable
 
-    # Find the hostId of each halo in its snapshot
-    halos = halos.join(hostmap, how='left') # (snapnum, haloId) -> hostId
-    halos = halos.reset_index()
-
-    halos = pd.merge(halos, progsTarget, how='left',
-                     left_on = 'snapnum', right_on = 'snapnum')
-    halos['birthTag'] = halos.apply(lambda x : define_halo_relationship(
-        x.progId, x.progHost, x.haloId, x.hostId), axis=1)
-    
-    return halos[['snapnum','haloId','birthTag']].set_index(['snapnum', 'haloId'])
 
 def fetch_phew_particles_for_halos(snap, hids):
     '''
@@ -274,7 +349,10 @@ from progen import *
 REFRESH = False
 
 sim = simulation.Simulation(model)
-snap = snapshot.Snapshot(model, 33)
+snapnum = 108
+snap = snapshot.Snapshot(model, snapnum)
+
+# Find progenitors for all halos within a snapshot.
 progtable = find_all_previous_progenitors(snap, overwrite=REFRESH)
 hostmap = build_haloId_hostId_map(snap, overwrite=REFRESH)
 
@@ -285,37 +363,59 @@ sim.compute_mloss_partition_by_pId(overwrite=False)
 
 phewtable = sim.load_phewtable()
 
-galIdTarget = 3 # Npart = 28, logMgal = 9.5, within 0.8-0.9 range
-pidlist = snap.get_gas_particles_in_halo(galIdTarget)
-gptable = build_gptable(pidlist, 33, 0, overwrite=REFRESH)
-gptable = sim.compute_mgain_partition_by_pId(gptable)
-gptable.haloId = gptable.haloId.apply(abs)
+# From here on, galaxy level
+# Get all gas particles from the target galaxy
+haloIdTarget = 1185 # Npart = 28, logMgal = 9.5, within 0.8-0.9 range
 
-pptable = build_pptable(gptable, inittable, phewtable, overwrite=True)
-birthtags = assign_birthtags_to_halos(galIdTarget, pptable, progtable, hostmap)
-pptable = pd.merge(pptable, birthtags, how='left',
-                   left_on=['snapfirst','birthId'], right_index=True)
+# Want to do a couple of things:
+# 1a. Find all gas particles currently in a galaxy
+# 1b. Find all recent accretion onto the galaxy
+# 2. Classify the primodial component into COLD and HOT
+# 3. Get the wind accretion info (SELF, SAT, IGM, ...)
+#   - Diagnostic: For each gas particle, plot Mgain vs. snapnum
+#     - Experiment with wacc.1185.csv
+# 4. Add up all COLD, HOT, SELF, SAT, IGM for the galaxy
+# Another track:
+# Find the mass fraction in SELF, CEN, SAT, IGM as a function of time.
+# Just use the gptable and find curtag
+
+
+pidlist = snap.get_gas_particles_in_galaxy(galIdTarget)
+
+REFRESH = False
+# Build gptable for selected gas particles (gId=1185;01:21)
+gptable = build_gptable(pidlist, snapnum, 0, overwrite=REFRESH)
+gptable = sim.compute_mgain_partition_by_pId(gptable)
+gptable = add_relation_field_to_gptable(galIdTarget, gptable, progtable, hostmap)
+# gptable.haloId = gptable.haloId.apply(abs)
+
+pptable = build_pptable(gptable, inittable, phewtable, overwrite=REFRESH)
+pptable = add_birthtag_field_to_pptable(galIdTarget, pptable, progtable, hostmap)
 
 # This is only for code test
-pptable.loc[(pptable.snapfirst==30)&(pptable.birthId==2), 'birthTag'] = 'SAT'
+# pptable.loc[(pptable.snapfirst==30)&(pptable.birthId==2), 'birthTag'] = 'SAT'
 
-# Get the mass gained by each halo since the snapshot partitioned by birthTag
-grps = pptable.groupby(['snapnum', 'haloId'])
-x = grps.apply(lambda x: x[['Mloss','birthTag']].groupby('birthTag').sum()).reset_index('birthTag')
-y = pd.merge(gptable, x, how='left', left_on=['snapnum', 'haloId'], right_on=['snapnum', 'haloId'])
-grps = y.groupby(['PId','snapnum'])
-z = grps.apply(lambda x : pd.DataFrame({
-    'PId': x.PId,
-    'snapnum': x.snapnum,
-    'birthTag':x.birthTag,
-    'Mgain':x.Mgain * x.Mloss / x.Mloss.sum()})
-)
-r = pd.concat([y[['PId','snapnum']], z], axis=1)
-ans = r.groupby(['PId', 'birthTag']).sum()
+def compute_wind_mass_partition_by_birthtag(gptable, pptable):
+    '''
+    The final step of the wind tracking engine. Compute how much wind material
+    a gas particle gained during each snapshot. The gained wind material is 
+    divided into categories based on the relation between a target halo and 
+    the halo from which the wind particle was launched.
 
-# Check 604552
-
-# haloId
-# -> pptable + birthtag
-# -> pptable.groupby(['snapnum','haloId']).agg(f('Mloss','tag'))
-# -> gptable.join(pptable, on=['snapnum', haloId])[Mgain_tag]
+    Returns
+    -------
+    mwindtable: pandas.DataFrame
+        Columns: PId*, snapnum, birthTag, Mgain
+    '''
+    grps = pptable.groupby(['snapnum', 'haloId'])
+    x = grps.apply(lambda x: x[['Mloss','birthTag']].groupby('birthTag').sum()).reset_index('birthTag')
+    y = pd.merge(gptable, x, how='left', left_on=['snapnum', 'haloId'], right_on=['snapnum', 'haloId'])
+    grps = y.groupby(['PId','snapnum'])
+    mwindtable = grps.apply(lambda x : pd.DataFrame({
+        'PId': x.PId,
+        'snapnum': x.snapnum,
+        'birthTag':x.birthTag,
+        'Mgain':x.Mgain * x.Mloss / x.Mloss.sum()})
+    )
+    # mwindtable = z.groupby(['PId', 'birthTag']).sum()
+    return mwindtable

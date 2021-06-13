@@ -67,7 +67,7 @@ class Map2D():
             self.ax.add_artist(Circle((x, y), r, alpha=0.6, fc="black"))
             if(show_index==True):
                 lbl = "{:d}".format(halo[0])
-                self.ax.text(x, y, lbl, fontsize=8)
+                self.ax.text(x, y, lbl, color="orange", fontsize=9)
 
     def set_colormap(self, cmap):
         try:
@@ -113,5 +113,5 @@ fig, ax = plt.subplots(1, 1, figsize=(8,8))
 # map2d = Map2D(snap, ax, zrange=(0.3, 0.5))
 map2d = Map2D(snap, ax)
 map2d.add_density_map()
-# map2d.add_halos()
+map2d.add_halos(show_index=True)
 map2d.draw()
