@@ -14,9 +14,11 @@ import os
 from bisect import bisect_right
 from tqdm import tqdm
 import snapshot
+import progen
 import pyarrow as pa
 import pyarrow.parquet as pq
 from pyarrow.parquet import ParquetFile
+from accretion import AccretionTracker
 
 from sparkutils import *
 
@@ -54,6 +56,40 @@ class Simulation():
             os.mkdir(self._path_workdir)
         self._n_snaps = None
 
+        self._inittable = None
+        self._phewtable = None
+        self._hostmap = None
+
+    def __str__(self):
+        return f"Simulation: {self._model}"
+
+    def __repr__(self):
+        return f"Simulation({self._model!r})"
+
+    def load_hostmap(self, reload_table=False):
+        if(self._progtable is not None or not reload_table):
+            talk("hostmap already loaded for {}".format(self.__repr__()))
+            return self._hostmap
+        else:
+            hostmap = self.build_hostmap()
+            self._hostmap = hostmap
+        return hostmap
+
+    def build_hostmap(self, rebuild=False):
+        '''
+        Build maps between haloId and hostId for each snapshot before the 
+        snapshot parsed in the arguments. 
+        Calls progen.build_haloId_hostId_ map(snap, overwrite)
+
+        Returns
+        -------
+        hostmap: pandas.DataFrame
+            Columns: snapnum*, haloId*, hostId
+        '''
+        hostmap = progen.build_haloId_hostId_map(self, overwrite=rebuild)
+        self._hostmap = hostmap
+        return hostmap
+
     def build_inittable(self, overwrite=False, spark=None):
         '''
         Gather all PhEW particles within the entire simulation and find their 
@@ -76,7 +112,7 @@ class Simulation():
             snapfirst is the snapshot BEFORE it was launched as a wind
             snaplast is the snapshot AFTER it stopped being a PhEW
         '''
-        fout = os.path.join(self._path_workdir, "inittable.csv",)
+        fout = os.path.join(self._path_data, "inittable.csv",)
 
         # Load if existed.
         if(os.path.exists(fout) and overwrite == False):
@@ -283,20 +319,6 @@ class Simulation():
             w = Window.partitionBy(phewtable.PId).orderBy(phewtable.snapnum)
             phewtable = phewtable.withColumn('Mloss', phewtable.Mass - sF.lag('Mass',1).over(w)).na.fill(0.0)
             phewtable.write.mode('overwrite').parquet(path_phewtable)
-
-    def compute_mgain_partition_by_pId(self, gptable, spark=None):
-        '''
-        For each gas particle in the gptable, compute its mass gain since last
-        snapshot.
-        '''
-        if(spark is None):
-            # This is a very expensive operation
-            gptable = gptable.reset_index()
-            gptable['Mgain'] = gptable.groupby(gptable.PId).Mass.diff().fillna(0.0)
-            return gptable
-        else:
-            w = Window.partitionBy(gp.PId).orderBy(gp.snapnum)
-            return gptable.withColumn('Mgain', gptable.Mass - sF.lag('Mass',1).over(w)).na.fill(0.0)
 
     @property
     def model(self):

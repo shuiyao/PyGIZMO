@@ -80,7 +80,6 @@ class AccretionTracker():
 
     def initialize(self):
         # prepare all required permanent tables for accretion tracking. Build the tables if they are not yet existed.
-        talk("AccretionTracker: Initializing permanent tables...", "talky")
         self._simulation.build_inittable()
         self._simulation.load_phewtable()
         # snap._simulation.compute_mloss_partition_by_pId(overwrite=False)
@@ -333,7 +332,6 @@ class AccretionTracker():
 
 
     def build_temporary_tables_for_galaxy(self, galIdTarget, spark=None):
-        talk("AccretionTracker: Building temporary tables for galId={} at snapnum={}".format(galIdTarget, self.snapnum), "talky")
         # Get the particle ID list to track
         pidlist = self._snap.get_gas_particles_in_galaxy(galIdTarget)        
 
@@ -409,14 +407,14 @@ class AccretionTracker():
         x = grps.apply(lambda x: x[['Mloss','birthTag']].groupby('birthTag').sum()).reset_index('birthTag')
         y = pd.merge(self.gptable, x, how='left', left_on=['snapnum', 'haloId'], right_on=['snapnum', 'haloId'])
         grps = y.groupby(['PId','snapnum'])
-        mwtable = grps.apply(lambda x : pd.DataFrame({
+        mwindtable = grps.apply(lambda x : pd.DataFrame({
             'PId': x.PId,
             'snapnum': x.snapnum,
             'birthTag':x.birthTag,
             'Mgain':x.Mgain * x.Mloss / x.Mloss.sum()})
         )
         # mwindtable = z.groupby(['PId', 'birthTag']).sum()
-        return mwtable
+        return mwindtable
         
     def gp_mass_gain_since_last_snapshot(PId, snapnum, gptable):
         '''
@@ -462,6 +460,9 @@ class AccretionTracker():
         else:
             mass_last = gptable.query('snapnum==@snapnum-1 AND PId==@PId').Mass
         return mass_this - mass_last
+
+import progen
+from progen import *
 
 if __mode__ == "__test__":
     REFRESH = False

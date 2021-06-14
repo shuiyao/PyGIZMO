@@ -12,7 +12,10 @@ import C
 import warnings
 
 import units
+import simulation
 from astroconst import pc, ac
+
+from accretion import AccretionTracker
 
 import config
 from utils import talk
@@ -25,17 +28,18 @@ PATHS = cfg['Paths']
 class Snapshot(object):
     def __init__(self, model, snapnum):
         self._model = model
+        self._simulation = simulation.Simulation(model)
         self._snapnum = snapnum
-        self._path_model = os.path.join(PATHS['data'], model)
-        self._path_hdf5 = os.path.join(self._path_model, "snapshot_{:03d}.hdf5".format(snapnum))
+        self._path_data = os.path.join(PATHS['data'], model)
+        self._path_hdf5 = os.path.join(self._path_data, "snapshot_{:03d}.hdf5".format(snapnum))
         self._path_workdir = os.path.join(PATHS['workdir'], model)
         if(not os.path.exists(self._path_workdir)):
             os.mkdir(self._path_workdir)
-        self._path_grp = os.path.join(self._path_model, "gal_z{:03d}.grp".format(snapnum))
-        self._path_stat = os.path.join(self._path_model, "gal_z{:03d}.stat".format(snapnum))
-        self._path_sogrp = os.path.join(self._path_model, "so_z{:03d}.sogrp".format(snapnum))
-        self._path_sovcirc = os.path.join(self._path_model, "so_z{:03d}.sovcirc".format(snapnum))
-        self._path_sopar = os.path.join(self._path_model, "so_z{:03d}.par".format(snapnum))        
+        self._path_grp = os.path.join(self._path_data, "gal_z{:03d}.grp".format(snapnum))
+        self._path_stat = os.path.join(self._path_data, "gal_z{:03d}.stat".format(snapnum))
+        self._path_sogrp = os.path.join(self._path_data, "so_z{:03d}.sogrp".format(snapnum))
+        self._path_sovcirc = os.path.join(self._path_data, "so_z{:03d}.sovcirc".format(snapnum))
+        self._path_sopar = os.path.join(self._path_data, "so_z{:03d}.par".format(snapnum))        
 
         with h5py.File(self._path_hdf5, "r") as hf:
             attrs = hf['Header'].attrs
@@ -69,6 +73,8 @@ class Snapshot(object):
         self._units_tipsy = units.Units('tipsy', lbox_in_mpc = self._boxsize_in_cm / ac.mpc)
         self._units_gizmo = units.Units('gadget')
 
+        self._progtable = None
+
     @classmethod
     def from_file(cls, path_hdf5):
         '''
@@ -94,6 +100,11 @@ class Snapshot(object):
         except:
             raise IOError("Can not parse file path: {}.", path_hdf5)
         
+    def __str__(self):
+        return f"Snapshot: {self._model}, snapnum: {self._snapnum}"
+
+    def __repr__(self):
+        return f"Snapshot(model={self._model!r}, snapnum={self._snapnum})"
 
     def _get_fields_todo(self, fields, fields_exist=set()):
         if(isinstance(fields, list)): fields = set(fields)
@@ -292,12 +303,71 @@ class Snapshot(object):
             return pd.read_csv(fout)
         
         C.cpygizmo.build_phase_diagram(
-            C.c_char_p(self._path_model.encode('utf-8')),
+            C.c_char_p(self._path_data.encode('utf-8')),
             C.c_char_p(self._path_workdir.encode('utf-8')),            
             C.c_int(self.snapnum),
             C.c_int(ncells_x),
             C.c_int(ncells_y))
-        return pd.read_csv(fout)        
+        return pd.read_csv(fout)
+
+    def load_progtable(self, reload_table=False):
+        if(self._progtable is not None or not reload_table):
+            talk("progtable already loaded for {}".format(self.__repr__()))
+            return self._progtable
+        else:
+            progtable = progen.find_all_previous_progenitors(self)
+            self._progtable = progtable
+        return progtable
+        
+    def build_progtable(self, rebuild=False, load_halo_mass=True):
+        '''
+        Find the progenitors for all halos within a snapshot in all previous 
+        snapshots. Calls progen.find_all_previous_progenitors(snap, overwrite, 
+        load_halo_mass)
+
+        Parameters
+        ----------
+        snap: class Snapshot.
+        rebuild: boolean. Default=False.
+            If False, first try to see if a table already exists. Create a new 
+            table if not.
+            If True, create a new table and overwrite the old one if needed.
+        load_halo_mass: boolean. Default=True
+            If True. Load logMvir and logMsub for each progenitor.
+
+        Returns
+        -------
+        progtable: pandas DataFrame.
+            A pandas table storing information for the progenitors of halos at
+            different time.
+            columns: haloId*, snapnum, progId, hostId, logMvir, logMsub
+
+        Examples
+        --------
+        >>> snap = snapshot.Snapshot('l12n144-phew', 100)
+        >>> progtable = snap.build_progtable(rebuild=True)
+
+        '''
+        progtable = progen.find_all_previous_progenitors(self, overwrite=rebuild, load_halo_mass=load_halo_mass)
+        self._progtable = progtable
+        return progtable
+
+    def get_ism_history_for_galaxy(self, galIdTarget):
+        # Look at the current ISM particles of a galaxy
+        if(self.act is None):
+            self.act = AccretionTracker(self)
+        self.act.initialize()
+        self.act.build_temporary_tables_for_galaxy(galIdTarget)
+        mwtable = self.act.compute_wind_mass_partition_by_birthtag()
+        return mwtable
+
+    def get_star_history_for_galaxy(self, galIdTarget):
+        # Look at the current star particles within a galaxy
+        pass
+
+    def get_accretion_stats_for_galaxy(self, galIdTarget):
+        # Look at recent accretion onto the galaxy
+        pass
 
     def _compute_derived_fields(self, fields_derived):
         cols = {}
@@ -318,6 +388,34 @@ class Snapshot(object):
         Transform between Tipsy coordinates and GIZMO coordinates
         '''
         return (x + 0.5) * self.boxsize
+
+    def get_phew_particles_from_halos(self, hids):
+        '''
+        Fetch all PhEW particles in a snapshot that appear in any of the halo in 
+        a list of halos.
+
+        Parameter
+        ---------
+        hids: array type.
+            A list of haloIds in the snapshot.
+
+        Returns
+        -------
+        phewp: pandas.DataFrame.
+            Columns: haloId, snapnum, PId.
+            A list of PhEW partcles that appear in the halos.
+
+        >>> hids = pd.Series([534, 584, 374])
+        '''
+        if(isinstance(hids, list)): hids = pd.Series(hids)
+        hids = hids[hids>0]
+        self.load_gas_particles(['PId','haloId','Mc'], drop=False)
+        pid = hids.apply(lambda x : list(self.gp.query("haloId==@x and Mc>0").PId))
+        phewp = pd.DataFrame({'haloId':hids, 'snapnum':self.snapnum, 'PId':pid})
+        # Need to remove halos that do not have any PhEW particles
+        phewp = phewp.explode('PId').dropna()
+        talk("{} PhEW particles fetched for {} halos.".format(phewp.shape[0], hids.size), 'talky')
+        return phewp
 
     @property
     def model(self):
