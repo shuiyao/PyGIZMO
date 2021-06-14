@@ -12,13 +12,13 @@ import C
 import warnings
 
 import units
-import simulation
 from astroconst import pc, ac
-
-from accretion import AccretionTracker
 
 import config
 from utils import talk
+
+import progen
+
 cfg = config.cfg
 
 path_schema = "data/HDF5schema.csv"
@@ -28,7 +28,6 @@ PATHS = cfg['Paths']
 class Snapshot(object):
     def __init__(self, model, snapnum):
         self._model = model
-        self._simulation = simulation.Simulation(model)
         self._snapnum = snapnum
         self._path_data = os.path.join(PATHS['data'], model)
         self._path_hdf5 = os.path.join(self._path_data, "snapshot_{:03d}.hdf5".format(snapnum))
@@ -74,6 +73,7 @@ class Snapshot(object):
         self._units_gizmo = units.Units('gadget')
 
         self._progtable = None
+        self._act = None
 
     @classmethod
     def from_file(cls, path_hdf5):
@@ -311,12 +311,12 @@ class Snapshot(object):
         return pd.read_csv(fout)
 
     def load_progtable(self, reload_table=False):
-        if(self._progtable is not None or not reload_table):
-            talk("progtable already loaded for {}".format(self.__repr__()))
-            return self._progtable
-        else:
+        if(self._progtable is None or reload_table):
             progtable = progen.find_all_previous_progenitors(self)
             self._progtable = progtable
+        else:
+            talk("progtable already loaded for {}".format(self.__repr__()))
+            return self._progtable
         return progtable
         
     def build_progtable(self, rebuild=False, load_halo_mass=True):
@@ -351,15 +351,6 @@ class Snapshot(object):
         progtable = progen.find_all_previous_progenitors(self, overwrite=rebuild, load_halo_mass=load_halo_mass)
         self._progtable = progtable
         return progtable
-
-    def get_ism_history_for_galaxy(self, galIdTarget):
-        # Look at the current ISM particles of a galaxy
-        if(self.act is None):
-            self.act = AccretionTracker(self)
-        self.act.initialize()
-        self.act.build_temporary_tables_for_galaxy(galIdTarget)
-        mwtable = self.act.compute_wind_mass_partition_by_birthtag()
-        return mwtable
 
     def get_star_history_for_galaxy(self, galIdTarget):
         # Look at the current star particles within a galaxy

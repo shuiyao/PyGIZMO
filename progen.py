@@ -137,29 +137,29 @@ def find_progenitors(snap, snap_early):
             haloId2progId[i] = 0
     return haloId2progId
 
-def build_haloId_hostId_map(snap, overwrite=False):
+def build_haloId_hostId_map(simulation, overwrite=False):
     '''
     Build maps between haloId and hostId for each snapshot before the snapshot
     parsed in the arguments.
 
     Parameter
     ---------
-    snap: class Snapshot.
+    simulation: class Simulation
 
     Returns
     -------
     hostmap: pandas.DataFrame
         Columns: snapnum*, haloId*, hostId
     '''
-    fout = os.path.join(snap._path_workdir, "hostmap.csv")
+    fout = os.path.join(simulation._path_workdir, "hostmap.csv")
     if(os.path.exists(fout) and overwrite == False):
         talk("Read existing hostmap file: {}".format(fout), 'normal')
         hostmap = pd.read_csv(fout, header=0)
         return hostmap.set_index(['snapnum', 'haloId'])
     
     frames = []
-    for snapnum in range(0, snap.snapnum+1):
-        snapcur = snapshot.Snapshot(snap.model, snapnum)
+    for snapnum in range(0, simulation.nsnaps):
+        snapcur = snapshot.Snapshot(simulation.model, snapnum)
         haloId2hostId = galaxy.read_sopar(snapcur._path_sopar, as_dict=True)
         # haloId2hostId may be empty when no galaxy existed
         df = pd.DataFrame({'snapnum':snapnum,

@@ -20,6 +20,7 @@ HaloId = 715:
 HaloId = 568:
   + In a cluster environment
 '''
+__mode__ = "X"
 
 import numpy as np
 import pandas as pd
@@ -37,19 +38,24 @@ import pyarrow.parquet as pq
 import pdb
 import simulation
 
-schema_gptable = {'columns':['PId','snapnum','Mass','haloId'],
+schema_gptable = {'columns':['PId','snapnum','Mass','haloId','Mgain','relation'],
                   'dtypes':{'PId':'int64',
                             'snapnum':'int32',
-                            'Mass':'float32',
-                            'haloId':'int32'}
+                            'Mass':'float64',
+                            'haloId':'int32',
+                            'Mgain':'float64',
+                            'relation':'string'
+                  }
 }
-schema_pptable = {'columns':['PId','haloId','snapnum','Mloss','snapfirst','birthId'],
+schema_pptable = {'columns':['PId','haloId','snapnum','Mloss','snapfirst','birthId','birthTag'],
                   'dtypes':{'PId':'int64',
                             'snapnum':'int32',
                             'haloId':'int32',
                             'Mloss':'float64',
                             'snapfirst':'int32',                            
-                            'birthId':'int32'}
+                            'birthId':'int32',
+                            'birthTag':'string'
+                  }
 }
 
 # gptable can be temporary, unless we can handle a gigantic table with Spark
@@ -69,34 +75,67 @@ class AccretionTracker():
         The snapshot which to track accretion
     '''
     
-    def __init__(self, snap):
-        self._snap = snap
-        self._simulation = snap._simulation
-        self.model = snap.model
-        self.snapnum = snap.snapnum
+    def __init__(self, model, snapnum):
+        self._snap = snapshot.Snapshot(model, snapnum)
+        self._simulation = simulation.Simulation(model)
+        self.model = model
+        self.snapnum = snapnum
         self.path_base = self._simulation._path_tmpdir
         self.gptable = None
         self.pptable = None
 
+    @classmethod
+    def from_snapshot(cls, snap):
+        act = cls(snap.model, snap.snapnum)
+        act._snap = snap
+        return act
+
     def initialize(self):
-        # prepare all required permanent tables for accretion tracking. Build the tables if they are not yet existed.
+        '''
+        Prepare all required permanent tables for accretion tracking. 
+        Build the tables if they are not already existed.
+        List of tables should be inplace:
+        Simulation.inittable (inittable.csv)
+        Simulation.phewtable, with Mloss (phewtable.parquet)
+        Simulation.hostmap (hostmap.csv)
+        Snapshot.progtable (progtab_{snapnum}.csv)
+        '''
+        
         talk("AccretionTracker: Initializing permanent tables...", "talky")
         self._simulation.build_inittable()
-        self._simulation.load_phewtable()
-        # snap._simulation.compute_mloss_partition_by_pId(overwrite=False)
+        try:
+            self._simulation.load_phewtable()
+        except:
+            self._simulation.build_phewtable()
+        # If the phewtable is half-built, then complete it and reload
+        if('Mloss' not in self._simulation._phewtable.columns):
+            self._simulation.compute_mloss_partition_by_pId(spark=spark)
+            self._simulation.load_phewtable()            
         self._simulation.load_hostmap()
         self._snap.load_progtable()
 
-    def build_gptable(self, pidlist, snapstart=0, overwrite=False):
+    def build_gptable(self, pidlist, snapstart=0, rebuild=False):
         '''
         Build the gptable for the particles to track. The particles are 
         specified by their particle IDs in the pidlist.
+        
+        Parameters
+        ----------
+        pidlist: list.
+            List of particle IDs for which to build the table
+        snapstart: int. Default = 0
+            The first snapshot to start tracing the particles.
+        rebuild: boolean. Default=False
+            If True, rebuild the table even if a file exists.
         '''
 
         snaplast = self.snapnum
         
-        path_gptable = os.path.join(self.path_base, "gptable.parquet")
-        if(overwrite==False and os.path.exists(path_gptable)):
+        # fname = "gptable_{:03d}_{:05d}.parquet".format(self.snapnum, galIdTarget)
+        fname = "gptable.parquet"
+        path_gptable = os.path.join(self.path_base, fname)
+
+        if(rebuild==False and os.path.exists(path_gptable)):
             talk("Load existing gptable.", 'normal')
             gptable = pd.read_parquet(path_gptable)
             self.gptable = gptable
@@ -113,13 +152,19 @@ class AccretionTracker():
             gptable = gp.copy() if gptable is None else pd.concat([gptable, gp])
 
         gptable = gptable.set_index('PId').sort_values('snapnum')
-        schema = utils.pyarrow_read_schema(schema_gptable)
-        tab = pa.Table.from_pandas(gptable, schema=schema, preserve_index=True)
-        pq.write_table(tab, path_gptable)
         self.gptable = gptable
         return gptable
 
-    def build_pptable(self, inittable, phewtable, gptable=None, overwrite=False):
+    def save_gptable(self, galIdTarget):
+        fname = "gptable_{:03d}_{:05d}.parquet".format(self.snapnum, galIdTarget)
+        path_gptable = os.path.join(self.path_base, fname)
+        talk("Saving gptable as {}".format(path_gptable), 'quiet')
+
+        schema = utils.pyarrow_read_schema(schema_gptable)
+        tab = pa.Table.from_pandas(self.gptable, schema=schema, preserve_index=True)
+        pq.write_table(tab, path_gptable)
+
+    def build_pptable(self, inittable, phewtable, gptable=None, rebuild=False):
         '''
         Build or load a temporary table that stores all the necessary attributes 
         of selected PhEW particles that can be queried by the accretion tracking 
@@ -142,6 +187,8 @@ class AccretionTracker():
             Gas particles whose histories we are tracking.
             Needed to find the list of halos for processing
             If None, try self.gptable
+        rebuild: boolean. Default=False
+            If True, rebuild the table even if a file exists.
 
         Returns
         -------
@@ -152,7 +199,7 @@ class AccretionTracker():
         '''
         
         path_pptable = os.path.join(self.path_base, "pptable.parquet")
-        if(overwrite==False and os.path.exists(path_pptable)):
+        if(rebuild==False and os.path.exists(path_pptable)):
             talk("Load existing pptable.", 'normal')
             pptable = pd.read_parquet(path_pptable)
             self.pptable = pptable
@@ -176,12 +223,17 @@ class AccretionTracker():
         pptable = pd.merge(pptable, inittable[['PId','snapfirst','birthId']],
                            how='left', left_on='PId', right_on='PId')
 
-        schema = utils.pyarrow_read_schema(schema_pptable)
-        tab = pa.Table.from_pandas(pptable, schema=schema, preserve_index=False)
-        pq.write_table(tab, path_pptable)
-
         self.pptable = pptable
         return pptable
+
+    def save_pptable(self, galIdTarget):
+        fname = "pptable_{:03d}_{:05d}.parquet".format(self.snapnum, galIdTarget)
+        path_pptable = os.path.join(self.path_base, fname)
+        talk("Saving pptable as {}".format(path_pptable), 'quiet')
+
+        schema = utils.pyarrow_read_schema(schema_pptable)
+        tab = pa.Table.from_pandas(self.pptable, schema=schema, preserve_index=True)
+        pq.write_table(tab, path_pptable)
 
     @staticmethod
     def define_halo_relationship(progId, progHost, haloId, hostId):
@@ -332,7 +384,13 @@ class AccretionTracker():
             return gptable.withColumn('Mgain', gptable.Mass - sF.lag('Mass',1).over(w)).na.fill(0.0)
 
 
-    def build_temporary_tables_for_galaxy(self, galIdTarget, spark=None):
+    def build_temporary_tables_for_galaxy(self, galIdTarget, rebuild=False, spark=None):
+        '''
+        Build gptable and pptable for particles selected from galIdTarget.
+        The permanent tables, inittable, phewtable, hostmap, progtable should 
+        already be in place with the initialize() call.
+        '''
+        
         talk("AccretionTracker: Building temporary tables for galId={} at snapnum={}".format(galIdTarget, self.snapnum), "talky")
         # Get the particle ID list to track
         pidlist = self._snap.get_gas_particles_in_galaxy(galIdTarget)        
@@ -348,6 +406,7 @@ class AccretionTracker():
             self._snap._progtable,
             self._simulation._hostmap
         )
+        self.save_gptable(galIdTarget)
 
         # Create/Load pptable 
         self.build_pptable(
@@ -362,6 +421,7 @@ class AccretionTracker():
             self._snap._progtable,
             self._simulation._hostmap
         )
+        self.save_pptable(galIdTarget)
 
     def verify_temporary_tables(self):
         '''
@@ -371,7 +431,7 @@ class AccretionTracker():
         ready = [False, False]
         if(self.gptable is None):
             print("gptable not loaded.")
-        else if('Mgain' not in self.gptable.columns):
+        elif('Mgain' not in self.gptable.columns):
             print("gptable loaded but misses 'Mgain' field")
         else:
             print("gptable ready.")
@@ -379,9 +439,9 @@ class AccretionTracker():
 
         if(self.pptable is None):
             print("pptable not loaded.")
-        else if('Mloss' not in self.pptable.columns):
+        elif('Mloss' not in self.pptable.columns):
             print("pptable loaded but misses 'Mloss' field")            
-        else if('birthTag' not in self.pptable.columns):
+        elif('birthTag' not in self.pptable.columns):
             print("pptable loaded but misses 'birthTag' field")
         else:
             print("pptable ready.")
@@ -462,6 +522,26 @@ class AccretionTracker():
         else:
             mass_last = gptable.query('snapnum==@snapnum-1 AND PId==@PId').Mass
         return mass_this - mass_last
+
+def get_ism_history_for_galaxy(galIdTarget):
+    # Look at the current ISM particles of a galaxy
+    model = "l25n144-test"    
+    snap = snapshot.Snapshot(model, 108)
+    act = AccretionTracker.from_snapshot(snap)
+    act.initialize()
+    act.build_temporary_tables_for_galaxy(galIdTarget)
+    mwtable = act.compute_wind_mass_partition_by_birthtag()
+    return mwtable, act
+
+#mwtable, act = get_ism_history_for_galaxy(1185)
+galIdTarget = 1185
+model = "l25n144-test"    
+snap = snapshot.Snapshot(model, 108)
+act = AccretionTracker.from_snapshot(snap)
+act.initialize()
+act.build_temporary_tables_for_galaxy(galIdTarget)
+mwtable = act.compute_wind_mass_partition_by_birthtag()
+
 
 if __mode__ == "__test__":
     REFRESH = False

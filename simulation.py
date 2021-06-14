@@ -18,7 +18,6 @@ import progen
 import pyarrow as pa
 import pyarrow.parquet as pq
 from pyarrow.parquet import ParquetFile
-from accretion import AccretionTracker
 
 from sparkutils import *
 
@@ -67,12 +66,12 @@ class Simulation():
         return f"Simulation({self._model!r})"
 
     def load_hostmap(self, reload_table=False):
-        if(self._progtable is not None or not reload_table):
-            talk("hostmap already loaded for {}".format(self.__repr__()))
-            return self._hostmap
-        else:
+        if(self._hostmap is None or reload_table):
             hostmap = self.build_hostmap()
             self._hostmap = hostmap
+        else:
+            talk("hostmap already loaded for {}".format(self.__repr__()))
+            return self._hostmap
         return hostmap
 
     def build_hostmap(self, rebuild=False):
@@ -196,6 +195,7 @@ class Simulation():
             return spark.read.parquet(path_phewtable)
         else:
             phewtable = pd.read_parquet(path_phewtable)
+            self._phewtable = phewtable
             return phewtable
 
     def build_phewtable(self, snaplast=None, snapstart=0, overwrite=False, ignore_init=False, spark=None):
@@ -270,7 +270,7 @@ class Simulation():
         schema = utils.pyarrow_read_schema(schema_phewtable)
         tab = pa.Table.from_pandas(phewtable, schema=schema, preserve_index=False)
         pq.write_table(tab, path_phewtable)
-        
+        self._phewtable = phewtable
         return phewtable
 
     def compute_mloss_partition_by_pId(self, overwrite=False, spark=None):

@@ -19,7 +19,8 @@ pyArrowTypeCast = {
     "int64":pa.int64(),
     "int32":pa.int32(),
     "float32":pa.float32(),
-    "float64":pa.float64()
+    "float64":pa.float64(),
+    "string":pa.string()    
 }
 
 def cumhist(arr, bins=10, weights=None, reverse=False):
