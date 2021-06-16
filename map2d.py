@@ -16,8 +16,6 @@ class Map2D():
         self.zmax = self.zrange[1] * self.boxsize
         self.xlims = (0.0, self.boxsize)
         self.ylims = (0.0, self.boxsize)
-        # self.xlims = (16000.0, 20000.0)
-        # self.ylims = (18000.0, 22000.0)
         self.xticks = np.linspace(self.xlims[0]/1.e3, self.xlims[1]/1.e3, 5)
         self.yticks = np.linspace(self.ylims[0]/1.e3, self.ylims[1]/1.e3, 5)
 
