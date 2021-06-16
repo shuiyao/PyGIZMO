@@ -4,7 +4,12 @@ Formatting
   + constants: UPPER_CASE_ALL
   + Avoid bool == True condition
 
-halosnap: can turn it into a better app
+PATH:
+tmpdir: boxpart_, halopart_, gptable_, pptable_
+workdir:
+data: phewtable.parquet, inittable.csv, HDF5, gal, so, WINDS
+
+[DONE] halosnap: can turn it into a better app
 windsnap: visualization tool that can be good
 
 plotlib: Import the plotting libraries in.
@@ -24,7 +29,7 @@ plotlib: Import the plotting libraries in.
   + halo 3D Map
 
 snapshot.py:
-  + Add function callers
+  + [X] Add function callers
     - e.g., from _analysis import *
 
 analysis.py:

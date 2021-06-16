@@ -26,12 +26,14 @@ hdf5schema = pd.read_csv(path_schema, header=0).set_index('FieldName')
 PATHS = cfg['Paths']
 
 class Snapshot(object):
+    
     def __init__(self, model, snapnum):
         self._model = model
         self._snapnum = snapnum
         self._path_data = os.path.join(PATHS['data'], model)
         self._path_hdf5 = os.path.join(self._path_data, "snapshot_{:03d}.hdf5".format(snapnum))
         self._path_workdir = os.path.join(PATHS['workdir'], model)
+        self._path_tmpdir = os.path.join(PATHS['tmp'], model)        
         if(not os.path.exists(self._path_workdir)):
             os.mkdir(self._path_workdir)
         self._path_grp = os.path.join(self._path_data, "gal_z{:03d}.grp".format(snapnum))
@@ -99,7 +101,7 @@ class Snapshot(object):
             return cls(model, snapnum)
         except:
             raise IOError("Can not parse file path: {}.", path_hdf5)
-        
+
     def __str__(self):
         return f"Snapshot: {self._model}, snapnum: {self._snapnum}"
 

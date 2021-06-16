@@ -6,7 +6,7 @@ import seaborn as sns
 import matplotlib.pyplot as plt
 from matplotlib.patches import Circle
 
-class Map2D():
+class Map2D(object):
     def __init__(self, snap, ax, zrange=(0.0, 1.0)):
         self._snap = snap
         self.ax = ax
@@ -19,7 +19,7 @@ class Map2D():
         self.xticks = np.linspace(self.xlims[0]/1.e3, self.xlims[1]/1.e3, 5)
         self.yticks = np.linspace(self.ylims[0]/1.e3, self.ylims[1]/1.e3, 5)
 
-    def add_density_map(self, ncells=(128, 128), cmap='Purples', seaborn=True):
+    def add_layer_density_map(self, ncells=(128, 128), cmap='Purples', seaborn=True):
         self.set_colormap(cmap)
         self._snap.load_gas_particles(['x','y','z','Mass'])
         gp = self._snap.gp
@@ -50,7 +50,7 @@ class Map2D():
             xgrid, ygrid = np.meshgrid(xbins, ybins)
             self.ax.pcolor(xgrid, ygrid, data, cmap="Purples")
 
-    def add_halos(self, rmin=100.0, show_index=False):
+    def add_layer_halos(self, rmin=100.0, show_index=False):
         self._snap.load_halos(['Rvir','x','y','z'])
         halos = self._snap.halos
         halos['x'] = halos['x'].apply(self._snap._transform_coordinates)
@@ -110,6 +110,6 @@ snap = snapshot.Snapshot(model, 108)
 fig, ax = plt.subplots(1, 1, figsize=(8,8))
 # map2d = Map2D(snap, ax, zrange=(0.3, 0.5))
 map2d = Map2D(snap, ax)
-map2d.add_density_map()
-map2d.add_halos(show_index=True)
+map2d.add_layer_density_map()
+map2d.add_layer_halos(show_index=True)
 map2d.draw()

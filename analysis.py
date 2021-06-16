@@ -1,8 +1,9 @@
+__all__ = ["compute_halo_gas_components", "radial_profile", "wind_fraction", "get_halo_metallicity", "derive_galaxy_properties"]
+
 from astroconst import pc, ac
 from config import cfg
 import pandas as pd
 
-__mode__ = "__X__"
 def compute_halo_gas_components(snap, Tcut=None):
     '''
     Decompose the baryons in each halo into several phases, including cold gas,
@@ -93,6 +94,3 @@ def derive_galaxy_properties(snap, oxygen=True, sfr_weighted=True, save=False):
         gal_attrs.to_csv(os.path.join(snap._path_workdir, "gals_z{}.attrs"))
     return gal_attrs
 
-if __mode__ == "__test__":
-    from snapshot import snap
-    h = compute_halo_gas_components(snap)
