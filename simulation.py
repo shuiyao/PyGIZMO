@@ -120,7 +120,9 @@ class Simulation():
                 schemaSpark = spark_read_schema(schema_inittable)
                 return spark.read.option('header','true').csv(fout, schemaSpark)
             else:
-                return pd.read_csv(fout, dtype=schema_inittable['dtypes'])
+                inittable = pd.read_csv(fout, dtype=schema_inittable['dtypes'])
+                self._inittable = inittable
+                return inittable
 
         # Create new if not existed.
         dfi = winds.read_initwinds(self._path_winds, columns=['atime','PhEWKey','Mass','PID'], minPotIdField=True)
@@ -141,6 +143,7 @@ class Simulation():
             df = pd.merge(grp, snap.gp, how='left',
                           left_on='PId', right_on='PId')
             frames.append(df)
+        # TODO: Use MinPotId to find more accurate birthId
         dfi = pd.concat(frames, axis=0).rename(columns={'haloId':'birthId'})
         dfi.birthId = dfi.birthId.fillna(0).astype('int32')
 
@@ -155,6 +158,7 @@ class Simulation():
         df = df[['PId','snapfirst','minit','birthId','snaplast','mlast']]
 
         df.to_csv(fout, index=False)
+        self._inittable = df
         return df
 
     def load_phewtable(self, spark=None):

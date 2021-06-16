@@ -101,7 +101,7 @@ class AccretionTracker():
         Snapshot.progtable (progtab_{snapnum}.csv)
         '''
         
-        talk("AccretionTracker: Initializing permanent tables...", "talky")
+        talk("\nAccretionTracker: Initializing permanent tables...", "talky")
         self._simulation.build_inittable()
         try:
             self._simulation.load_phewtable()
@@ -113,6 +113,18 @@ class AccretionTracker():
             self._simulation.load_phewtable()            
         self._simulation.load_hostmap()
         self._snap.load_progtable()
+
+    def load_gptable(self, galIdTarget, verbose='talky'):
+        fname = "gptable_{:03d}_{:05d}.parquet".format(self.snapnum, galIdTarget)
+        path_gptable = os.path.join(self.path_base, fname)
+        if(os.path.exists(path_gptable)):
+            talk("Loading gptable from file.", 'quiet')
+            gptable = pd.read_parquet(path_gptable)
+            self.gptable = gptable
+            return True
+        else:
+            talk("gptable {} not found. Use build_gptable() to build new table.".format(fname), verbose)
+            return False
 
     def build_gptable(self, pidlist, snapstart=0, rebuild=False):
         '''
@@ -164,6 +176,18 @@ class AccretionTracker():
         tab = pa.Table.from_pandas(self.gptable, schema=schema, preserve_index=True)
         pq.write_table(tab, path_gptable)
 
+    def load_pptable(self, galIdTarget, verbose='talky'):
+        fname = "pptable_{:03d}_{:05d}.parquet".format(self.snapnum, galIdTarget)
+        path_pptable = os.path.join(self.path_base, fname)
+        if(os.path.exists(path_pptable)):
+            talk("Loading pptable from file.", 'quiet')
+            pptable = pd.read_parquet(path_pptable)
+            self.pptable = pptable
+            return True
+        else:
+            talk("pptable {} not found. Use build_pptable() to build new table.".format(fname), verbose)
+            return False
+
     def build_pptable(self, inittable, phewtable, gptable=None, rebuild=False):
         '''
         Build or load a temporary table that stores all the necessary attributes 
@@ -208,7 +232,7 @@ class AccretionTracker():
         if(gptable is None):
             gptable = self.gptable
 
-        assert('Mloss' not in phewtable.columns), "'Mloss' field not found in phewtable."
+        assert('Mloss' in phewtable.columns), "'Mloss' field not found in phewtable."
 
         # Find all halos that ever hosted the gas particles in gptable
         halos = AccretionTracker.compile_halos_to_process(gptable)
@@ -391,37 +415,39 @@ class AccretionTracker():
         already be in place with the initialize() call.
         '''
         
-        talk("AccretionTracker: Building temporary tables for galId={} at snapnum={}".format(galIdTarget, self.snapnum), "talky")
+        talk("\nAccretionTracker: Building temporary tables for galId={} at snapnum={}".format(galIdTarget, self.snapnum), "talky")
         # Get the particle ID list to track
-        pidlist = self._snap.get_gas_particles_in_galaxy(galIdTarget)        
+        if(not self.load_gptable(galIdTarget, verbose='quiet') or rebuild==True):
+            pidlist = self._snap.get_gas_particles_in_galaxy(galIdTarget)        
 
-        # Create/Load gptable
-        self.build_gptable(pidlist, self.snapnum, 0)
-        # Compute the 'Mgain' field for all gas particles in gptable
-        self.gptable = self.__class__.compute_mgain_partition_by_pId(self.gptable)
-        # Add their relations to galIdTarget
-        self.gptable = self.__class__.add_relation_field_to_gptable(
-            galIdTarget,
-            self.gptable,
-            self._snap._progtable,
-            self._simulation._hostmap
-        )
-        self.save_gptable(galIdTarget)
+            # Create/Load gptable
+            self.build_gptable(pidlist, rebuild=True)
+            # Compute the 'Mgain' field for all gas particles in gptable
+            self.gptable = self.__class__.compute_mgain_partition_by_pId(self.gptable)
+            # Add their relations to galIdTarget
+            self.gptable = self.__class__.add_relation_field_to_gptable(
+                galIdTarget,
+                self.gptable,
+                self._snap._progtable,
+                self._simulation._hostmap
+            )
+            self.save_gptable(galIdTarget)
 
-        # Create/Load pptable 
-        self.build_pptable(
-            self.gptable,
-            self._simulation._inittable,
-            self._simulation._phewtable
-        )
-        # Add birthtags relative to galIdTarget
-        self.pptable = self.add_birthtag_field_to_pptable(
-            galIdTarget,
-            self.pptable,
-            self._snap._progtable,
-            self._simulation._hostmap
-        )
-        self.save_pptable(galIdTarget)
+        # Create/Load pptable
+        if(not self.load_pptable(galIdTarget, verbose='quiet') or rebuild == True):
+            self.build_pptable(
+                self._simulation._inittable,
+                self._simulation._phewtable,
+                rebuild=True
+            )
+            # Add birthtags relative to galIdTarget
+            self.pptable = self.add_birthtag_field_to_pptable(
+                galIdTarget,
+                self.pptable,
+                self._snap._progtable,
+                self._simulation._hostmap
+            )
+            self.save_pptable(galIdTarget)
 
     def verify_temporary_tables(self):
         '''
@@ -533,37 +559,63 @@ def get_ism_history_for_galaxy(galIdTarget):
     mwtable = act.compute_wind_mass_partition_by_birthtag()
     return mwtable, act
 
-#mwtable, act = get_ism_history_for_galaxy(1185)
-galIdTarget = 1185
-model = "l25n144-test"    
-snap = snapshot.Snapshot(model, 108)
-act = AccretionTracker.from_snapshot(snap)
-act.initialize()
-act.build_temporary_tables_for_galaxy(galIdTarget)
-mwtable = act.compute_wind_mass_partition_by_birthtag()
+galIdTarget = 715 # Npart = 28, logMgal = 9.5, within 0.8-0.9 range
 
+# 568, 715, 1185
 
-if __mode__ == "__test__":
-    REFRESH = False
+__mode__ = "__loadX__"
 
-    sim = simulation.Simulation(model)
-    snapnum = 108
-    snap = snapshot.Snapshot(model, snapnum)
+if(__mode__ == "__load__"):
+    model = "l25n144-test"    
+    snap = snapshot.Snapshot(model, 108)
+    act = AccretionTracker.from_snapshot(snap)
+    act.initialize()
+    act.build_temporary_tables_for_galaxy(galIdTarget, rebuild=False)
+    mwtable = act.compute_wind_mass_partition_by_birthtag()
+    mwtable.groupby(['PId','birthTag'])['Mgain'].sum()
 
-    # Find progenitors for all halos within a snapshot.
-    progtable = find_all_previous_progenitors(snap, overwrite=REFRESH)
-    hostmap = build_haloId_hostId_map(snap, overwrite=REFRESH)
+import seaborn as sns
+import matplotlib.pyplot as plt
 
-    # Time-consuming, but only needs one-go for each simulation
-    inittable = sim.build_inittable(overwrite=False)
-    sim.build_phewtable(overwrite=False)
-    sim.compute_mloss_partition_by_pId(overwrite=False)
+# grp = mwtable.groupby(['PId','birthTag'])
+# x = grp['Mgain'].cumsum(skipna=True)
+# df2 = pd.concat([mwtable[['snapnum','birthTag']], x], axis=1)
+# mtot = df2.groupby('snapnum').Mgain.sum()
+# mtot = pd.DataFrame({'Mass':mtot, 'birthTag':'TOT'}).reset_index()
+# df2 = pd.concat([df2, mtot], axis=0)
 
-    phewtable = sim.load_phewtable()
+# tab.Mgain = tab.Mgain.fillna(0.0)
+# tab.birthTag = tab.birthTag.fillna('IGM')
+# mass_by_relation = tab.groupby(['snapnum','birthTag']).Mgain.sum()
+# mass_by_relation = mass_by_relation.reset_index()
+
+# fig, ax = plt.subplots(1,1, figsize=(9,6))
+# sns.lineplot(data=mass_by_relation, x='snapnum', y='Mgain', hue='birthTag', ax=ax)
+# plt.title("Wind material accumulation history for gas particles in a galaxy")
+
+# Historical locations of ISM gas of a galaxy in the current snapshot.
+def show_1():
+    mass_by_relation = act.gptable.groupby(['snapnum','relation']).Mass.sum()
+    mass_by_relation = mass_by_relation.reset_index()
+    mtot = mass_by_relation.groupby('snapnum').Mass.sum()
+    mtot = pd.DataFrame({'Mass':mtot, 'relation':'TOT'}).reset_index()
+    mass_by_relation = pd.concat([mass_by_relation, mtot], axis=0)
+    # ci = 95 as default
+    sns.lineplot(data=mass_by_relation, hue='relation', x='snapnum', y='Mass', legend='brief')
+    plt.title("Historical locations of gas in a massive galaxy at z=0")
+
+show_1()
+plt.axvline(78, linestyle="--", color='k')
+plt.axvline(58, linestyle=":", color='k')
+plt.savefig(DIRS['FIGURE']+"tmp.pdf")
+plt.close()
+
+# gptable is correct.
+# pptable birthTag is NaN when birthId == 0
+#  - 71260 out of 583652 PhEWs have birthId == 0.
 
     # From here on, galaxy level
     # Get all gas particles from the target galaxy
-    haloIdTarget = 1185 # Npart = 28, logMgal = 9.5, within 0.8-0.9 range
 
     # Want to do a couple of things:
     # 1a. Find all gas particles currently in a galaxy
@@ -576,20 +628,3 @@ if __mode__ == "__test__":
     # Another track:
     # Find the mass fraction in SELF, CEN, SAT, IGM as a function of time.
     # Just use the gptable and find curtag
-
-
-    pidlist = snap.get_gas_particles_in_galaxy(galIdTarget)
-
-    REFRESH = False
-    # Build gptable for selected gas particles (gId=1185;01:21)
-    gptable = build_gptable(pidlist, snapnum, 0, overwrite=REFRESH)
-    gptable = sim.compute_mgain_partition_by_pId(gptable)
-    gptable = add_relation_field_to_gptable(galIdTarget, gptable, progtable, hostmap)
-    # gptable.haloId = gptable.haloId.apply(abs)
-
-    pptable = build_pptable(gptable, inittable, phewtable, overwrite=REFRESH)
-    pptable = add_birthtag_field_to_pptable(galIdTarget, pptable, progtable, hostmap)
-
-    # This is only for code test
-    # pptable.loc[(pptable.snapfirst==30)&(pptable.birthId==2), 'birthTag'] = 'SAT'
-
