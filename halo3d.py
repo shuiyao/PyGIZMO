@@ -1,6 +1,7 @@
 import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
 import snapshot
+import pandas as pd
 import os
 
 class Halo3D(object):
@@ -283,6 +284,7 @@ class Halo3D(object):
     def halos(self):
         return self._snap.halos
 
+snap = snapshot.Snapshot('l25n144-test', 108)
 h3d = Halo3D(snap, haloid=147)
 h3d.draw()
 plt.show()
