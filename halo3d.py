@@ -1,11 +1,80 @@
 import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
-from myinit import *
 import snapshot
 import os
 
 class Halo3D(object):
-    def __init__(self, snap, haloid=None, angles_faceon=[0,0], angles_edgeon=[0,0], rlim=0.8, rlim_zoomin=0.15, cmap_logt="plasma", cmap_phew="Greens", background="black", figsize=(9,6)):
+    '''
+    Display gas particles in a selected halo.
+    
+    The left hand panel shows an overall view of the halo. Normal gas 
+    particles have colors ranging from blue to red (plasma color map) 
+    according to their log temperatures. The PhEW particles are colored in
+    green, their color tunes and sizes accord with their remaining mass. The
+    dense gas particles in a galaxy are displayed in light blue color.
+
+    The right panels consist of zoomed-in views (head on and an edge on) of 
+    the central region of the halo.
+
+    Parameters
+    ----------
+    snap: Snapshot object.
+    haloid: int. 
+        The haloId of the halo to display.
+    angles_faceon: [float, float]. Default = [90., 90.]
+        The viewing angle for the face on view. 
+    angles_edgeon: [float, float]. Default = [0., 0.]
+        The viewing angle for the edge on view. 
+        TODO: Can automatically figure out these angles using cross product
+    rlim: float. Default = 0.8
+        The boundary of the overview plot is rlim * rad, where rad is the 
+        virial radius of the halo.
+    rlim_zoomin: float. Default = 0.15
+        The boundary of the zoomed-in views.
+    cmap_logt: string. Default = "plasma"
+        Color map for the normal gas particles.
+    cmap_phew: string. Default = "Greens"
+        Color map for the PhEW particles.
+    background: string. Default = "black"
+        The background color.
+    figsize: (int, int). Default = (9, 6)
+
+    Examples
+    --------
+    >>> snap = snapshot.Snapshot("l25n144-test", 108)
+    >>> h3d = Halo3D(snap, haloid=1)
+
+    HaloId: 1
+    --------------------------------
+    Center  : [   49.6,  3938.8,  5731.8]
+    logMvir : 12.59
+    Rvir    : 285.5 kpc
+
+    >>> h3d.draw()
+    >>> h3d.select_galaxies_by_mass_percentiles(0.96, 0.962)
+
+           Npart    logMgal   logMstar
+    galId                             
+    147      478  10.873955  10.721762
+    528      598  10.889726  10.810463
+    594      607  10.876665  10.865065
+
+    >>> h3d.load_halo_particles(147)
+
+    HaloId: 147
+    --------------------------------
+    Center  : [11777.2,  5328.7,  5637.4]
+    logMvir : 12.21
+    Rvir    : 214.2 kpc
+
+    >>> h3d.draw()
+
+    '''
+    def __init__(self, snap, haloid=None,
+                 angles_faceon=[90,90], angles_edgeon=[0,0],
+                 rlim=0.8, rlim_zoomin=0.15,
+                 cmap_logt="plasma", cmap_phew="Greens", background="black",
+                 figsize=(9,6)):
         self._snap = snap
         self._snapnum = snap.snapnum
         self.rlim = rlim
@@ -20,11 +89,19 @@ class Halo3D(object):
 
         self.cmap_logt=plt.get_cmap(cmap_logt) # 4.0 - 7.0
         self.cmap_phew=plt.get_cmap(cmap_phew) # 0.0 - 1.0
-        self.color_star = (65./255., 105./255., 225./255., 1.0) # royal blue
+        self.cmap_star = (65./255., 105./255., 225./255., 1.0) # royal blue
         self.figsize = figsize
         self.background = background
 
     def load_halo_info(self, haloId):
+        '''
+        Load some halo information from the galaxy/halo outputs.
+
+        Parameters
+        ----------
+        haloId: int.
+        '''
+        
         fields = ['Rvir', 'logMvir', 'x', 'y', 'z']
         if(self._snap.halos is None or
            any(item not in snap.halos.columns for item in fields)):
@@ -48,6 +125,22 @@ class Halo3D(object):
         self.halo()
 
     def load_halo_particles(self, haloId=None, box=True, rewrite=False):
+        '''
+        Load gas particles from or near the given halo. If rewrite is not True, 
+        read existing file that was created in the tmpdir.
+        
+        Parameters
+        ----------
+        haloId: int. Default = None.
+            If None. Use self.haloId if exists.
+            Otherwise, reset self.haloId to haloId and load the new halo.
+        box: boolean. Default=True
+            If True, select all gas particles that are within a cosmic box 
+            centered on the given halo. Otherwise, select halo particles only.
+        rewrite: boolean. Default=False
+            If True. Reload gas particles from the snapshots even if the files 
+            already exist.
+        '''
         if(self.haloId is None and haloId is None):
             print("haloId is not found.")
             return
@@ -56,12 +149,13 @@ class Halo3D(object):
             if(self.haloId is None or self.haloId != haloId):
                 self.load_halo_info(haloId)
             
-        if(box): fname = "box_{:3d}_{:5d}.csv".format(self._snapnum, self.haloId)
-        else: fname = "halo_{:3d}_{:5d}.csv".format(self._snapnum, self.haloId)
+        if(box): fname = "box_{:3d}_{:05d}.csv".format(self._snapnum, self.haloId)
+        else: fname = "halo_{:3d}_{:05d}.csv".format(self._snapnum, self.haloId)
         fname = os.path.join(self.path_output, fname)
         if(os.path.exists(fname) and not rewrite):
             self._data = pd.read_csv(fname)
         else: # Find particles and write file
+            print("Writing particle file {}".format(os.path.basename(fname)))
             if(box):
                 xmin, xmax = self.xlims
                 ymin, ymax = self.ylims
@@ -73,6 +167,8 @@ class Halo3D(object):
             else:
                 self._snap.load_gas_particles(['x','y','z','Mc','Sfr','logT','haloId'])
                 self._data = self._snap.gp.query("haloId==@haloId")
+            if(not os.path.isdir(self.path_output)):
+                os.mkdir(self.path_output)
             self._data.to_csv(fname, index=False)
 
     @staticmethod
@@ -90,23 +186,22 @@ class Halo3D(object):
     def set_color_and_size(self):
         flag_sfr = (self._data.Sfr > 0)
         flag_phew = (self._data.Mc > 0)
-
-        gp = self._data[~(flag_sfr | flag_phew)]
-        gp['color'] = gp.logT.apply(
-            self.get_color_index, args=(self.cmap_logt, "gas"))
-        gp['sizes'] = 3
-
-        ism = self._data[flag_sfr]
-        ism['color'] = ism.Sfr.apply(
-            self.get_color_index, args=(self.color_star, "sfr"))
-        ism['sizes'] = 3
         
-        phew = self._data[flag_phew]
-        phew['color'] = phew.Mc.apply(
-            self.get_color_index, args=(self.cmap_phew, "phew"))
-        phew['sizes'] = 20. * phew.Mc ** 2
+        self._data.loc[~(flag_sfr | flag_phew), 'color'] \
+            = self._data.loc[~(flag_sfr | flag_phew), 'logT'].apply(
+                self.get_color_index, args=(self.cmap_logt, "gas"))
+        self._data.loc[~(flag_sfr | flag_phew), 'sizes'] = 5
 
-        self._data = pd.concat([gp, ism, phew], axis=0)
+        self._data.loc[flag_sfr, 'color'] \
+            = self._data.loc[flag_sfr, 'Sfr'].apply(
+                self.get_color_index, args=(self.cmap_star, "sfr"))
+        self._data.loc[flag_sfr, 'sizes'] = 5
+
+        self._data.loc[flag_phew, 'color'] \
+            = self._data.loc[flag_phew, 'Mc'].apply(
+                self.get_color_index, args=(self.cmap_phew, "phew"))
+        self._data.loc[flag_phew, 'sizes'] \
+            = 20. * self._data.loc[flag_phew, 'Mc'] ** 2
 
     def set_canvas(self):
         self.fig = plt.figure(1, figsize=self.figsize)
@@ -166,6 +261,13 @@ class Halo3D(object):
                                 self.z + self.rlim_zoomin * self.rad)
         self.ax_edgeon.view_init(self.angles_edgeon[0], self.angles_edgeon[1])
 
+    def select_galaxies_by_mass_percentiles(self, plow=0.99, phigh=1.00):
+        '''
+        Helper function that displays a list of galaxies whose masses fall 
+        within the given percentile range.
+        '''
+        return self._snap.select_galaxies_by_mass_percentiles(plow, phigh)
+
     def halo(self):
         if(self.haloId is None):
             print("\nHalo not loaded yet.")
@@ -181,7 +283,7 @@ class Halo3D(object):
     def halos(self):
         return self._snap.halos
 
-h3d = Halo3D(snap, haloid=1)
+h3d = Halo3D(snap, haloid=147)
 h3d.draw()
-plt.savefig(DIRS['FIGURE']+"tmp.png")
+plt.show()
 

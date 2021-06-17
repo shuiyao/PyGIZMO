@@ -8,7 +8,6 @@ import numpy as np
 import pandas as pd
 import pdb
 import galaxy
-import C
 import warnings
 
 import units
@@ -33,7 +32,7 @@ class Snapshot(object):
         self._path_data = os.path.join(PATHS['data'], model)
         self._path_hdf5 = os.path.join(self._path_data, "snapshot_{:03d}.hdf5".format(snapnum))
         self._path_workdir = os.path.join(PATHS['workdir'], model)
-        self._path_tmpdir = os.path.join(PATHS['tmp'], model)        
+        self._path_tmpdir = os.path.join(PATHS['tmpdir'], model)        
         if(not os.path.exists(self._path_workdir)):
             os.mkdir(self._path_workdir)
         self._path_grp = os.path.join(self._path_data, "gal_z{:03d}.grp".format(snapnum))
@@ -76,6 +75,8 @@ class Snapshot(object):
 
         self._progtable = None
         self._act = None
+
+        talk(self.__str__(), "normal")
 
     @classmethod
     def from_file(cls, path_hdf5):
@@ -296,6 +297,8 @@ class Snapshot(object):
         -------
         If ions==True, tabion_???.csv; else tabmet_???.csv
         '''
+
+        import C
 
         fprefix = "tabion" if (ions) else "tabmet"
         fout = os.path.join(self._path_workdir,

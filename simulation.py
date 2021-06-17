@@ -2,7 +2,6 @@
 Procedures at the simulation level.
 '''
 
-from myinit import *
 import utils
 from utils import talk
 import pandas as pd
@@ -49,7 +48,7 @@ class Simulation():
         self._model = model
         self._path_data = os.path.join(PATHS['data'], model)
         self._path_workdir = os.path.join(PATHS['workdir'], model)
-        self._path_tmpdir = os.path.join(PATHS['tmp'], model)
+        self._path_tmpdir = os.path.join(PATHS['tmpdir'], model)
         self._path_winds = os.path.join(self._path_data, "WINDS")
         if(not os.path.exists(self._path_workdir)):
             os.mkdir(self._path_workdir)

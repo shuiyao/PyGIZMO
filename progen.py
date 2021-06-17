@@ -9,7 +9,6 @@ __all__ = ['find_all_previous_progenitors', 'find_progenitors',
 import snapshot
 from utils import talk
 import galaxy
-from myinit import *
 import pandas as pd
 from tqdm import tqdm
 import os
