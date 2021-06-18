@@ -323,6 +323,15 @@ class Simulation():
             phewtable = phewtable.withColumn('Mloss', phewtable.Mass - sF.lag('Mass',1).over(w)).na.fill(0.0)
             phewtable.write.mode('overwrite').parquet(path_phewtable)
 
+    @staticmethod
+    def load_timeinfo_for_snapshots(fredz="redshift.txt"):
+        '''
+        Load the correspondence between snapnum and redshift and cosmic time.
+        '''
+        df_redz = pd.read_csv(fredz, sep='\s+', header=0)
+        df_redz = df_redz.drop("snapnum", axis=1)
+        return df_redz
+
     @property
     def model(self):
         return self._model

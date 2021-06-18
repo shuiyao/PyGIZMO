@@ -1,15 +1,20 @@
 '''
 General utilities.
 '''
-__all__ = ['path_schema', 'cumhist', 'talk', 'load_timeinfo_for_snapshots', 'rcol']
+__all__ = ['np', 'pd', 'os', 'reload', 'set_trace', 'path_schema', 'cumhist', 'talk', 'rcol']
+
+import os
+import pandas as pd
+import numpy as np
+from importlib import reload
+from pdb import set_trace
 
 import json
-import os
 import sys
 from config import cfg
 import glob
 
-import pandas as pd
+
 import pyarrow as pa
 import pyarrow.parquet as pq
 
@@ -111,11 +116,6 @@ def pyarrow_read_schema(schema_json):
         field = pa.field(col, pyArrowTypeCast[dtypes[col]])
         fields.append(field)
     return pa.schema(fields)
-
-def load_timeinfo_for_snapshots(fredz="redshift.txt"):
-    df_redz = pd.read_csv(fredz, sep='\s+', header=0)
-    df_redz = df_redz.drop("snapnum", axis=1)
-    return df_redz
 
 def rcol(filename="", columns=[], intcolumns=[], linestart=0, linetotal=0, separator="", verbose=True):
     '''

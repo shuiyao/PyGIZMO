@@ -82,8 +82,11 @@ class Halo3D(object):
         self.rlim_zoomin = rlim_zoomin
         self.angles_faceon = angles_faceon
         self.angles_edgeon = angles_edgeon
-        self.path_output = snap._path_tmpdir
         self.haloId = haloid
+
+        self.path_output = snap._path_tmpdir
+        self.path_figure = snap._path_figure
+
         if(haloid is not None):
             self.load_halo_info(haloid)
             self.load_halo_particles()
@@ -152,6 +155,7 @@ class Halo3D(object):
             
         if(box): fname = "box_{:3d}_{:05d}.csv".format(self._snapnum, self.haloId)
         else: fname = "halo_{:3d}_{:05d}.csv".format(self._snapnum, self.haloId)
+
         fname = os.path.join(self.path_output, fname)
         if(os.path.exists(fname) and not rewrite):
             self._data = pd.read_csv(fname)
@@ -216,11 +220,20 @@ class Halo3D(object):
         self.ax_faceon.set_facecolor(self.background)
         self.ax_faceon._axis3don = False
 
-    def draw(self):
+    def draw(self, savefig=True, path_figure=None):
         '''
         Draw 3 views of the halo: One overview, another two zoomed-in on the 
         central region. One head-on view, another edge-on.
+
+        Parameters
+        ----------
+        savefig: boolean. Default = False
+            If True. Save the figure as a PNG file.
+        path_figure: string. Default = None.
+            Path to the figure folder. If None, use default figure path 
+            specified in the configuration file.
         '''
+        
         print("Set Canvas ...")
         self.set_canvas()
         print("Set color and size ...")
@@ -262,6 +275,13 @@ class Halo3D(object):
                                 self.z + self.rlim_zoomin * self.rad)
         self.ax_edgeon.view_init(self.angles_edgeon[0], self.angles_edgeon[1])
 
+        if(savefig):
+            if(path_figure is None):
+                path_figure = self.path_figure
+            figname = "frame_{:3d}_{:05d}.png".format(self._snapnum, self.haloId)
+            figname = os.path.join(path_figure, figname)
+            plt.savefig(figname)
+
     def select_galaxies_by_mass_percentiles(self, plow=0.99, phigh=1.00):
         '''
         Helper function that displays a list of galaxies whose masses fall 
@@ -270,6 +290,9 @@ class Halo3D(object):
         return self._snap.select_galaxies_by_mass_percentiles(plow, phigh)
 
     def halo(self):
+        '''
+        Display information of the currently selected halo.
+        '''
         if(self.haloId is None):
             print("\nHalo not loaded yet.")
         line = "HaloId: {}".format(self.haloId)
@@ -280,12 +303,45 @@ class Halo3D(object):
         line += "\nRvir    : {:5.1f} kpc".format(self.rad)
         print(line)
 
+    def generate_movie_frames(self, path_output=None):
+        '''
+        Generate movie frames for the currently selected halo at all previous 
+        snapshots since it has formed. The frames can be used later for making 
+        movies that show the evolution of the halo, and in particular, the 
+        winds that constantly come out of the galaxy.
+
+        Parameters
+        ----------
+        path_output: string. Default = None
+            By default, output to the tmpdir.
+        '''
+
+        folder = "frames_{:3d}_{:05d}".format(self._snapnum, self.haloId)
+        if(path_output is None):
+            path_output = os.path.join(self.path_figure, folder)
+        if(not os.path.isdir(path_output)):
+            os.mkdir(path_output)
+
+        # Load progenitor table to find the progenitors of the halo
+        tab = self._snap.load_progtable()
+        tab = tab.loc[self.haloId][['snapnum', 'progId']].set_index('snapnum')
+
+        for snapnum in tab.index:
+            progid = tab.loc[snapnum]
+            figname = "box_{:3d}_{:05d}.png".format(snapnum, progid)
+            if(progid == 0): continue
+            path_figure = os.path.join(path_output, figname)
+            snap = snapshot.Snapshot(self.snapnum, self._snap.model)
+            h3d = Halo3D(snap, prog)
+            h3d.draw(savefig=True)
+            plt.close()
+
     @property
     def halos(self):
         return self._snap.halos
 
 snap = snapshot.Snapshot('l25n144-test', 108)
 h3d = Halo3D(snap, haloid=147)
-h3d.draw()
-plt.show()
+# h3d.draw()
+# plt.show()
 

@@ -32,9 +32,16 @@ class Snapshot(object):
         self._path_data = os.path.join(PATHS['data'], model)
         self._path_hdf5 = os.path.join(self._path_data, "snapshot_{:03d}.hdf5".format(snapnum))
         self._path_workdir = os.path.join(PATHS['workdir'], model)
-        self._path_tmpdir = os.path.join(PATHS['tmpdir'], model)        
+        self._path_tmpdir = os.path.join(PATHS['tmpdir'], model)
+        self._path_figure = os.path.join(PATHS['figure'], model)
+
         if(not os.path.exists(self._path_workdir)):
             os.mkdir(self._path_workdir)
+        if(not os.path.exists(self._path_tmpdir)):
+            os.mkdir(self._path_tmpdir)
+        if(not os.path.exists(self._path_figure)):
+            os.mkdir(self._path_figure)
+            
         self._path_grp = os.path.join(self._path_data, "gal_z{:03d}.grp".format(snapnum))
         self._path_stat = os.path.join(self._path_data, "gal_z{:03d}.stat".format(snapnum))
         self._path_sogrp = os.path.join(self._path_data, "so_z{:03d}.sogrp".format(snapnum))

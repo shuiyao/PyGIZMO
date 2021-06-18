@@ -26,7 +26,7 @@ plotlib: Import the plotting libraries in.
       + Stellar mass - halo mass function
       + MZR, fgas
   + [DONE] Snapshot 2D Map
-  + halo 3D Map
+  + [DONE] halo 3D Map
 
 snapshot.py:
   + [X] Add function callers
