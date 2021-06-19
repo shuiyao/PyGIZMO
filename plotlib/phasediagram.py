@@ -26,9 +26,6 @@ rc_phase_diagram = {
 
 sns.set_context("paper", rc=rc_phase_diagram)
 
-fig, axs = plt.subplots(1, 1, figsize=(6,6))
-ax = axs[0] if isinstance(axs, list) else axs
-
 class PhaseDiagram():
     def __init__(self, ax, cmap="Purples"):
         self.ax = ax
@@ -142,10 +139,14 @@ class PhaseDiagram():
         self._textnorm(-1.,4.6, "Diffuse", color="purple")
         self._textnorm(5.2,4.6, "Condensed", color="teal")
 
-rhot = PhaseDiagram(ax)
-rhot.load_grid_data(path_grid)
-rhot.draw(annotate=True)        
-#plt.show()
+    @staticmethod
+    def demo():
+        fig, axs = plt.subplots(1, 1, figsize=(6,6))
+        ax = axs[0] if isinstance(axs, list) else axs
+        rhot = PhaseDiagram(ax)
+        rhot.load_grid_data(path_grid)
+        rhot.draw(annotate=True)        
+        plt.show()
 
 # grid_kws = {"height_ratios": (.9, .05), "hspace": .3}
 # f, (ax, cbar_ax) = plt.subplots(2, gridspec_kw=grid_kws)

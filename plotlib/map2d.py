@@ -1,10 +1,10 @@
 import pandas as pd
 import numpy as np
-import snapshot
-from myinit import *
 import seaborn as sns
 import matplotlib.pyplot as plt
 from matplotlib.patches import Circle
+
+# from .. import snapshot
 
 class Map2D(object):
     def __init__(self, snap, ax, zrange=(0.0, 1.0)):
@@ -104,12 +104,14 @@ class Map2D(object):
         self.ax.set_yticklabels(labels)
         self.ax.tick_params(direction="in")
 
-reload(snapshot)
-model = "l25n144-test"
-snap = snapshot.Snapshot(model, 108)
-fig, ax = plt.subplots(1, 1, figsize=(8,8))
-# map2d = Map2D(snap, ax, zrange=(0.3, 0.5))
-map2d = Map2D(snap, ax)
-map2d.add_layer_density_map()
-map2d.add_layer_halos(show_index=True)
-map2d.draw()
+    # @staticmethod
+    # def demo():
+    #     from .. import snapshot
+    #     model = "l25n144-test"
+    #     snap = snapshot.Snapshot(model, 108)
+    #     fig, ax = plt.subplots(1, 1, figsize=(8,8))
+    #     # map2d = Map2D(snap, ax, zrange=(0.3, 0.5))
+    #     map2d = Map2D(snap, ax)
+    #     map2d.add_layer_density_map()
+    #     map2d.add_layer_halos(show_index=True)
+    #     map2d.draw()

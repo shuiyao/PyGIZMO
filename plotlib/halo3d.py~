@@ -340,8 +340,11 @@ class Halo3D(object):
     def halos(self):
         return self._snap.halos
 
-snap = snapshot.Snapshot('l25n144-test', 108)
-h3d = Halo3D(snap, haloid=147)
-# h3d.draw()
-# plt.show()
+    @staticmethod
+    def demo():
+        from .. import snapshot
+        snap = snapshot.Snapshot('l25n144-test', 108)
+        h3d = Halo3D(snap, haloid=147)
+        h3d.draw()
+        plt.show()
 

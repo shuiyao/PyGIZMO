@@ -5,6 +5,7 @@ class ParamsTopLevel(abc.ABC): # default set of parameters, the object defines i
     def __init__(self):
         self.num = 1
         self.figsize = (6.4, 4.8)
+        self.dpi = 100
         self.top = 0.88
         self.bottom = 0.11
         self.right = 0.9
@@ -13,9 +14,28 @@ class ParamsTopLevel(abc.ABC): # default set of parameters, the object defines i
         self.wspace = 0.2
         self.fontsize_label = 12
         self.fontsize_tick = 8
+        self.fontsize_legend = 10
         self.ylabels = ""
         self.xlabels = ""
-        self.title = ""
+        self.suptitle = ""
+
+    @staticmethod
+    def pixels_to_inches(pix, dpi):
+        '''
+        Convert pixels to inches.
+        dpi: pixel per inch
+        '''
+        return pix / dpi
+
+    def _pixels_fignorm(self, pix, axis=0):
+        '''
+        Convert pixels to dimensional unit relative to a figure.
+        '''
+        if(axis == 'x'): axis = 0
+        elif(axis == 'y'): axis = 1
+        
+        norm = self.figsize[axis]
+        return ParamsTopLevel.pixels_to_inches(pix, self.dpi) / norm
 
     @staticmethod
     def _print_param(key, val):
@@ -26,6 +46,7 @@ class ParamsTopLevel(abc.ABC): # default set of parameters, the object defines i
         print ("Parameters")
         print ("--------------------------------")
         self._print_param("figsize", self.figsize)
+        self._print_param("dpi", self.dpi)
         self._print_param("top", self.top)
         self._print_param("bottom", self.bottom)
         self._print_param("right", self.right)
@@ -33,10 +54,11 @@ class ParamsTopLevel(abc.ABC): # default set of parameters, the object defines i
         self._print_param("hspace", self.hspace)
         self._print_param("wspace", self.wspace)
         self._print_param("fontsize_label", self.fontsize_label)
-        self._print_param("fontsize_tick", self.fontsize_tick)        
+        self._print_param("fontsize_tick", self.fontsize_tick)
+        self._print_param("fontsize_legend", self.fontsize_legend)        
         self._print_param("ylabels", self.ylabels)
         self._print_param("xlabels", self.xlabels)
-        self._print_param("title", self.title)
+        self._print_param("suptitle", self.suptitle)
 
     def help(self):
         self.show()
@@ -67,3 +89,4 @@ class ParamsMulti(ParamsTopLevel):
         self._print_param("height_ratios", self.height_ratios)
         self._print_param("width_ratios", self.width_ratios)
         
+par = ParamsMulti(2, 2)
