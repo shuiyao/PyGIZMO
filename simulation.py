@@ -39,7 +39,13 @@ schema_inittable = {'columns':['PId','snapfirst','minit','birthId',
                               'snaplast':'int32',
                               'mlast':'float64'}
 }
-
+schema_splittable = {'columns':['PId','parentId','Mass','atime','snapnext'],
+                    'dtypes':{'PId':'int64',
+                              'parentId':'int64',
+                              'Mass':'float64',
+                              'atime':'float32',
+                              'snapnext':'int32'}
+}
 
 # model = "l12n144-phew-movie-200"
 model = "l25n144-test"
@@ -57,6 +63,7 @@ class Simulation():
         self._inittable = None
         self._phewtable = None
         self._hostmap = None
+        self._splittable = None        
 
     def __str__(self):
         return f"Simulation: {self._model}"
@@ -158,6 +165,47 @@ class Simulation():
 
         df.to_csv(fout, index=False)
         self._inittable = df
+        return df
+
+    def build_splittable(self, overwrite=False, spark=None):
+        '''
+
+        Parameters
+        ----------
+        overwrite: boolean. Default=False.
+            If True, force creating the table.
+        spark: SparkSession. Default=None
+            If None, return the table as a pandas dataframe.
+            Otherwise, return the table as a Spark dataframe.
+        
+        Returns
+        -------
+        splittable: pandas.DataFrame or Spark DataFrame
+            Columns: PId*, parentId, Mass, atime, snapnext
+            snapnext is the snapshot AFTER the split happened
+        '''
+        fout = os.path.join(self._path_data, "splittable.csv",)
+
+        # Load if existed.
+        if(os.path.exists(fout) and overwrite == False):
+            talk("Loading existing splittable.csv file...", 'normal')
+            if(spark is not None):
+                schemaSpark = spark_read_schema(schema_splittable)
+                return spark.read.option('header','true').csv(fout, schemaSpark)
+            else:
+                splittable = pd.read_csv(fout, dtype=schema_splittable['dtypes'])
+                self._splittable = splittable
+                return splittable
+
+        # Create new if not existed.
+        df = winds.read_split(self._path_winds) # TODO
+        redz = utils.load_timeinfo_for_snapshots()
+        df['snapnext'] = dfi.atime.map(lambda x : bisect_right(redz.a, x))
+
+        df = df[schema_splittable]
+        
+        df.to_csv(fout, index=False)
+        self._splittable = df
         return df
 
     def load_phewtable(self, spark=None):

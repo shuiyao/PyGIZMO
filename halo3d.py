@@ -3,7 +3,8 @@ from mpl_toolkits.mplot3d import Axes3D
 import pandas as pd
 import os
 
-from .. import snapshot
+# from .. import snapshot
+import snapshot
 
 class Halo3D(object):
     '''
@@ -192,7 +193,7 @@ class Halo3D(object):
     def set_color_and_size(self):
         flag_sfr = (self._data.Sfr > 0)
         flag_phew = (self._data.Mc > 0)
-        
+
         self._data.loc[~(flag_sfr | flag_phew), 'color'] \
             = self._data.loc[~(flag_sfr | flag_phew), 'logT'].apply(
                 self.get_color_index, args=(self.cmap_logt, "gas"))
@@ -343,17 +344,17 @@ class Halo3D(object):
 
     @staticmethod
     def demo():
-        '''
-        Another halo for demonstration is:
-        model = l25n288-phew-m5
-        snapnum = 58
-        haloId = 48
-        angles_faceon = (98, 5)
-        angles_edgeon = (117, -84)
-        '''
-        from .. import snapshot
+        # from .. import snapshot
+        import snapshot
+        # snap = snapshot.Snapshot('l25n288-phew-m5', 108)
         snap = snapshot.Snapshot('l25n144-test', 108)        
         h3d = Halo3D(snap, haloid=147)
         h3d.draw()
         plt.show()
 
+# Example:         
+# model = l25n288-phew-m5
+# snapnum = 58
+# haloId = 48
+# angles_faceon = (98, 5)
+# angles_edgeon = (117, -84)
