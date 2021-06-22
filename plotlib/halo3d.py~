@@ -1,10 +1,8 @@
 import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
+import snapshot
 import pandas as pd
 import os
-
-# from .. import snapshot
-import snapshot
 
 class Halo3D(object):
     '''
@@ -155,8 +153,8 @@ class Halo3D(object):
             if(self.haloId is None or self.haloId != haloId):
                 self.load_halo_info(haloId)
             
-        if(box): fname = "box_{:03d}_{:05d}.csv".format(self._snapnum, self.haloId)
-        else: fname = "halo_{:03d}_{:05d}.csv".format(self._snapnum, self.haloId)
+        if(box): fname = "box_{:3d}_{:05d}.csv".format(self._snapnum, self.haloId)
+        else: fname = "halo_{:3d}_{:05d}.csv".format(self._snapnum, self.haloId)
 
         fname = os.path.join(self.path_output, fname)
         if(os.path.exists(fname) and not rewrite):
@@ -193,7 +191,7 @@ class Halo3D(object):
     def set_color_and_size(self):
         flag_sfr = (self._data.Sfr > 0)
         flag_phew = (self._data.Mc > 0)
-
+        
         self._data.loc[~(flag_sfr | flag_phew), 'color'] \
             = self._data.loc[~(flag_sfr | flag_phew), 'logT'].apply(
                 self.get_color_index, args=(self.cmap_logt, "gas"))
@@ -243,7 +241,7 @@ class Halo3D(object):
         self.ax_main.scatter(self._data.x, self._data.y, self._data.z,
                              marker='o', c=self._data.color, s=self._data.sizes,
                              edgecolors='none')
-        txt = "z = {:3.1f}".format(self._snap.redshift)
+        txt = "z = {:3.1f}".format(snap.redshift)
         self.ax_main.text2D(0.08, 0.92, txt, fontsize=16, color="lightgrey",
                             weight='heavy', transform=self.ax_main.transAxes)
         self.ax_main.set_xlim(self.x - self.rlim * self.rad,
@@ -344,18 +342,9 @@ class Halo3D(object):
 
     @staticmethod
     def demo():
-        # from .. import snapshot
-        import snapshot
-        # snap = snapshot.Snapshot('l25n288-phew-m5', 108)
-        snap = snapshot.Snapshot('l25n144-test', 108)        
+        from .. import snapshot
+        snap = snapshot.Snapshot('l25n144-test', 108)
         h3d = Halo3D(snap, haloid=147)
         h3d.draw()
         plt.show()
 
-
-# Example:         
-# model = l25n288-phew-m5
-# snapnum = 58
-# haloId = 48
-# angles_faceon = (98, 5)
-# angles_edgeon = (117, -84)

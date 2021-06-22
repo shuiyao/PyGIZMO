@@ -13,5 +13,6 @@ Tmax,TemperatureMax,FLOAT,float32,FloatType
 Age,StellarFormationTime,FLOAT,float32,FloatType
 Metals,Metallicity,ARRAY<DOUBLE>,float32,ArrayType
 Mc,PhEWMcloud,FLOAT,float32,FloatType
+Rc,PhEWRcloud,FLOAT,float32,FloatType
 MinPotId,PhEWMinPotID,LONG,int64,LongType
 Mwind,PhEWWindMass,DOUBLE,float64,DoubleType

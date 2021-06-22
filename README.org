@@ -1,0 +1,371 @@
+#+STARTUP: content
+#+STARTUP: indent
+#+STARTUP: entitiespretty
+
+#+OPTIONS: _:nil
+
+#+TITLE: PyGIZMO: Python APIs for the GIZMO Simulation
+#+AUTHOR: Shuiyao (Charlie) Huang
+#+DATE: <2021-06-20>
+#+EMAIL: shuiyao@umass.edu
+
+* Introduction
+
+PyGIZMO is a light-weight module that provides convenient APIs to cosmological hydrodynamical simulation outputs from the [[http://www.tapir.caltech.edu/~phopkins/Site/GIZMO.html][GIZMO]] code.
+
+The main components of PyGIZMO include a data warehouse implementation, several high-level modules for scientic analysis and modules for data visualization.
+
+PyGIZMO implements data pipelines that extract and transform simulation data from various sources with multiple formats into a coherent data warehouse that can be managed with a clean set of APIs. The simulation data includes the raw particle data from the simulation snapshots, galaxy catalogs generated from group finders, and record files that stores the run-time information of wind particles.
+
+In addition, PyGIZMO implements several high-level functionalities such as generating [[sec:mergertree][halo merger trees]] and [[sec:accretiontracker][tracking galactic accretion]] that involves some intensive computations and heavily relies on efficient data pipelining. In particular, PyGIZMO provides unique supports to analyzing the outputs from the [[https://arxiv.org/abs/2106.01511][PhEW]] (Physically Evolved Winds) model, which is a novel sub-grid model in the GIZMO simulations that analytically propagates wind particles in the galactic halo.
+
+Finally, PyGIZMO provides many plotting modules that enable quick inspection of the simulation data as well as making complicated figures for journal publications.
+
+
+* Quick Start
+
+** Requirements
+
+PyGIZMO is built and tested with the following libraries:
+
+#+CAPTION[Lists]: Pre-requisites
++ Python 3.x
++ numpy-
++ scipy-
++ pandas-
++ h5py
++ matplotlib
++ seaborn
++ pyspark
++ tqdm (progress bar animation)
+
+** Installation
+#+BEGIN_SRC shell
+git clone http://
+cd 
+sudo python setup.py install
+#+END_SRC
+
+** Examples
+
+This *jupyter notebook* demonstrates several basic and advanced user cases of the program.
+
+*** Load snapshots
+
+*** Draw phase diagram and overplot wind particles
+
+*** Make a movie of a single evolving halo
+
+
+* Configuration
+
+The configuration file pygizmo.cfg (*sample*) controls many global parameters that defines and controls:
++ The general behaviors of PyGIZMO
++ The input formats and units of the simulation outputs
++ Default settings of the plotting modules, i.e., plotlib
+
+The configuration files consists of different categories, each with a set of parameters.
+
+#+CAPTION[Lists]: Categories in the configuration file
++ Paths :: The paths that are used in I/O
+           - pygizmo: Location of the PyGIZMO module.
+           - data: Location for the simulation raw outputs and some massive derived tables (e.g., phewtable, inittable).
+           - workdir: Location for derived and compiled results (e.g., grid data for the phase diagram, galaxy statistics), some permanent tables that are frequently loaded (e.g., progtable).
+           - tmpdir: Location for 'cached' data, e.g., temporary tables, halo particle data used for plotting.
+           - figure: Output location for figures.
+           - sci:
++ Schema :: The schema for different source data.
++ Verbose :: The numeric values for different levels of verbosity.
++ Units :: The default units for length, mass, velocity and magnetic field strength. The GIZMO/GADGET tradition uses 1 kpc, 10^10 M_solar, 1 km/s and 1 Gauss.
++ Cosmology :: Cosmological parameters. Should be the same as in the simulation.
++ Default :: A list of default values
+             - logT\under{}threshold: The log temperature that separates cold and hot gas.
++ Simulation :: Some attributes specific to each simulation
+                - snapnum\under{}reference: Defines the ascales of all simulation snapshots.
+                - n\under{}metals: Total number of elements in the Metallicity field.
+                - elements: Ordered list that defines the name of elements in the Metallicity field.
++ Ions :: TODO. Properties of several important ion spectral lines.
++ Zsolar :: Abundances of various elements in the solar atmosphere. Often used to normalize metallicity.
++ HDF5Field :: Shortnames for HDF5 fields
++ HDF5ParticleTypes :: The numerical value that corresponds to a specific particle type. Particles of any specific type are stored under PartType#/ in the HDF5 file. By default, 0, 1, 4, 5 correspond to gas particles, dark matter particles, star particles and black hole seed particles (if exist). In zoom-in simulations, 2, 3 usually correspond to dark matter particles at finer levels of resolutions.
++ Derived :: A list of quantities that are not stored in the HDF5 files but can be derived from other HDF5 fields. For example, logT (log temperature) is a crucial gas property that needs to be derived from the U (internal energy), Ne (electron abundance) and Y (helium abundance) fields.
+
+* Plotlib: Convenient APIs for Fine Tuning Figures for Journal Articles
+
+The current module implements the following classes:
+
+** MultiFrame: An easy interactive tool that manages figure layouts
+
+lazy computation.
+
+Legend: Easily customizing multiple legends to MultiFrame
+ColorBar: (TODO) Easily customizing multiple colorbars to MultiFrame
+
+** LinePlot: Interface for line-type plot.
+
+** PhaseDiagram: Customizing multi-layer phase diagrams
+
+** Map2D: Customizing multi-layer 2D maps for simulations
+
+
+
+** Halo3D: Generating 3D particle layouts for galactic halos
+
+
+* Galaxy and Halo Properties
+
+diagnostic statistics and analytics 
+
+
+* Merger Trees
+<<sec:mergertree>>
+** Halo Merger Trees
+*** Implementation
+
+** Galaxy Merger Trees
+*** Implementation
+
+*Output*
+Create /stars_{snapnum}.csv/ for each snapshot
+| column  | source  | description                         |
+|---------+---------+-------------------------------------|
+| snapnum | -       | Integer                             |
+| starId  | HDF5    | PID for each star particle          |
+| mass    | HDF5    | Mass at this snapshot               |
+| galId   | grp     | galId at this snapshot              |
+| haloId  | sogrp   | haloId at this snapshot             |
+| mainId  | Derived | The Unique galId for the simulation |
+| initId  | Derived | First galId after the star formed   |
+
+The mainId file:
+| column     | dtype   | description                      |
+|------------+---------+----------------------------------|
+| mainId     | int64   |                                  |
+| snapnum    | int32   |                                  |
+| galId      | int32   |                                  |
+| hostId     | int32   |                                  |
+| Mstar      | float32 | Stellar Mass                     |
+| Mtot       | float32 | Galaxy Mass                      |
+| Mhost      | float32 | Host Halo Mass                   |
+| mainIdNext | int64   | The mainId of its descendent     |
+
+*Find the parent and snaplast of a mainId*
+First of all, maybe this information is redundant.
+
+Create a temporary table: galId -> galIdNext
+
+MainId -> galId 
+       -> galIdNext (Join, groupby and sortby sum(mass))
+       -> MainIdNext (Unique)
+
+Last snapshot: stars having mainId
+This snapshot: These stars having different mainId
+
+Brute Force: 
+  + Left join by starId to last snapshot, compare mainIdlast and mainId
+  + Group by mainIdlast, pick the mainId as max(mass)
+    - Expect in most cases mainIdlast == mainId
+  + Or. Group by galIdlast, find the galId in the next snapshot
+    - galId uniquely determines mainId in the next snapshot
+
+Example:
+snap i, mainId j: [[initId1], [InitId2], [InitIdj]]
+
+*Relation between two galaxies at different time*
+WANT TO FIND THE DIRECT DESCENDENT OF G0 AT T1
+
+Galaxy g0: (snapnum=t0, galId=0)
+Galaxy g1: (snapnum=t1>t0, galId=1)
+
+At time t0, all stars in g0 has the same galId and mainId.
+At time t1, they have different galId(t0) and mainId(t0), but supposedly most of them end up in a single galaxy g0'. 
+If g0.mainId == g0'.mainId, R(g0, g0') = 'SELF'. 
+If g0.mainId <> g0'.mainId, R(g0, g0') = 'MERGE'. 
+
+Define R(g0, g1) according to the relation between g0 and g0''
+g0'' at t0 is backtracked from g0':
+  + g0''.mainId = g0'.mainId is found. 
+    - R(g0, g1) = 'SELF' if g0''.mainId == g0.mainId
+    - R(g0, g1) = 'SAT' if g0''.galId == g0.hostId
+    - R(g0, g1) = 'CEN' if g0''.hostId == g0.galId
+    - R(g0, g1) = 'SIB' if g0''.hostId == g0.hostId not in [g0''.galId, g0.galId]
+    - Else: R(g0, g1) = 'NGB'
+  + Not found. R(g0, g1) = 'SELF'
+    Reason: Most g0 ends up in g0'. g0 formed even before the mainId of g0'. So even if g0'.mainId formed apart from g0, winds from g0 get back to g0's dscendent.
+
+*Global variables*
+maxMainId: Int. Counter for the global maximum mainId
+spAll: DataFrame. All star particles.
+
+*Procedure*
+1. Generate /stars_$snapnum.csv/ Table
+~generate_star_history(model, start=0)~: Driver program. Start from earlier snapshot (start) and move forward in time. If start is not 0, read data from the last snapshot that has been processed.
+  + ~process_snapshot(model, i)~: Update with the i-th snapshot.
+    - ~load_snapshot(snapname, grpname)~: Load HDF5 and grp data
+      - ~load_galaxies(fname, numPart)~: Load grp data.
+    - ~find_mainId_for_gals(spAll)~: Assign for each galaxy some mainId, if it is the mainId of most stars (by mass) in the galaxy.
+    - ~update_mainId_of_stars(spAll, mainIds)~: Update mainId for each star as the mainId of its host galaxy at this snapshot.
+
+2. Generate /galmainid/ Table
+Pandas is likely sufficient for this task.
+~galtree.py:build_mainId_table()~
+
+3. Find the relations between two halos at different times
+Method I. Find the most massive progenitor of any halo gal1 at z1 at z0 (z0 > z1), gal1'. Define the relation between gal1 and any halo at z0 by the relations between gal1' and those halos (SELF, SIB, SAT, CEN, NGB). This method does not require the *mainId* information.
+(galId, snapnum<snapnum0) -> (galId, hostId)
+In total, ngals * (snapnum0-1) lines.
+I can use dark matter to trace halos.
+
+*Caveats*
++ Tidally stripped stars make up around 50% of the total stellar mass. Therefore, we need to make sure that:
+  - Assign new mainId to a star only if it is in a SKID galaxy
+  - Map mainId at any time only to SKID galaxy (galId != 0)
+
+
+* Accretion Tracking Engine
+<<sec:accretiontracker>>
+
+Analyzing the history of gas accretion into a galaxy is critical to understanding galaxy formation and evolution. The accretion tracking engine in PyGIZMO reconstructs the history of selected gas particles from a wide range of simulation outputs and classifies their accretion events into several categories that are physically motivated. The engine tracks selected gas particles across previous snapshots and analyzes their interactions with the galactic halos and wind particles over time.
+
+** Basic Usage
+
+The accretion.AccretionTracker class provides most of the public APIs for tracking accretion.
+
+This following example creates a pandas DataFrame that tracks the accretion histories for all gas particles in the interstellar medium of a galaxy at z = 0.
+#+BEGIN_SRC python
+>>> from snapshot import Snapshot
+>>> from accretion import AccretionTracker
+
+# Create an instance of the AccretionTracker from a snapshot (z=0)
+>>> model = "l25n144-test"    
+>>> snap = snapshot.Snapshot(model, 108)
+>>> act = AccretionTracker.from_snapshot(snap)
+>>> act.initialize()
+
+# Build temporary tables for selected particles from a galaxy specified by galIdTarget
+>>> act.build_temporary_tables_for_galaxy(galIdTarget)
+
+# Run the engine and generate result
+>>> mwtable = act.compute_wind_mass_partition_by_birthtag()
+#+END_SRC
+
+The resulted table can be used to answer many questions. For example, to find the total amount of wind recycling divided into the different categories:
+#+BEGIN_SRC python
+>>> mwtable.groupby('birthTag')['Mgain'].sum()
+#+END_SRC 
+
+** Algorithm
+
+This following *diagram* demonstrates the algorithm for classifying gas particles according to their accretion history. In a typical scenario, one looks at all the gas particles that recently accreted into a galaxy (/target galaxy/) at some time, and classifies them into several accretion mode according their evolution histories at earlier times before accretion. PyGIZMO tracks each of the particle by their unique particle ID over previous snapshots and extracts key information that help classify the particle into one of the following /accretion modes/:
+
++ /Merger/: The particle was found in another galaxy at some previous time (already accreted at least once prior to the current accretion event). 
++ /Primordial/: For first time accretion, the original component of a gas particle is classified as primordial accretion, which has two sub-categories
+  - /Cold accretion/: If the maximum temperature that the gas particle ever reached was below 10^5.5 K (controlled by (~logT_threshold~)).
+  - /Hot accretion/: If the maximum temperature was higher.
++ /Recycled/: For first time accretion, the mixed-in wind materials are treated separately from primordial accretion. The wind materials are further classifed according to the relation between the progenitor of the target galaxy /progenitor/ and the galaxy where the winds originated from /birth site/. 
+  - /Recycled from self/: The wind materials originated directly from the direct prognitor of the target galaxy at some earlier time.
+  - /Recycled from central/: The birth site was the central galaxy of the progenitor.
+  - /Recycled from satellite/: The birth site was the satellite galaxy of the progenitor
+  - /Recycled from IGM/: The birth site and the progenitor were unrelated at the time of wind launch.
+
+More about tracking recycled materials: In a PhEW simulation, a normal gas particle may constantly get wind materials from different neighboring wind particles. Tracking every single mass flow between normal gas particles and wind particles and keeping track of where the wind particles came from will take too much disc space and is therefore impractical. Instead, we provide an approximate solution ('Bayesian machine' in the diagram) relying on computing the posterior probability of a gas particle getting materials from each of the recycled categories between two snapshots. See this *journal article* for details.
+
+** Implementation
+
+The accretion tracking engine relies on a set of permanent tables that need to be computed once for each simulation and a set of temporary tables that need to be constructed each time when one selects a new target halo from a snapshot. The following *diagram* demonstrates the workflow.
+
+*** Data structures and schema
+
+#+CAPTION[Table]: A list of Tables
+| Table     | Format  | Path  | Sources                     | Description                              |
+|-----------+---------+-------+-----------------------------+------------------------------------------|
+| inittable | CSV     | $DATA | snapshot, initwinds, rejoin | Wind events (launch/rejoin)              |
+| phewtable | parquet | $DATA | snapshot, inittable, halos  | PhEW particles                           |
+| progtable | CSV     | $WORK | snapshot, halos             | Halo progenitors at earlier times        |
+| hostmap   | CSV     | $WORK | halos                       | The host for each halo                   |
+| gptable   | parquet | $TMP  | snapshot, halos             | History of gas particles from the target |
+| pptable   | parquet | $TMP  | snapshot, phewtable         | History of relevant PhEW particles       |
+| halotable | CSV     | $TMP  | gptable, pptable, halos     | Relevant Halos                           |
+
+
+Notes: 
++ The source column indicates the raw data from which the table is built.
++ Default paths are defined in the configuration file.
+
+*Permanent tables*
+1. The /phewtable/ parquet table (~Simulation.build_phewtable~)
+It's a gigantic table that needs to be frequently queried. It contains the attributes, such as mass and haloId, of all PhEW particles in any snapshot. The Mloss field is derived for each particle (PId) over time. Assume at each snapshot, a total mass of Mloss was lost from the PhEW particle (PId) to the halo (haloId) where it was found at that snapshot.
+
+| Field     | dtype   | Description                                 |
+|-----------+---------+---------------------------------------------|
+| PId*      | int64   | Unique particle ID of a wind(PhEW) particle |
+| snapnum   | int32   | Id of any snapshot in which PId is a wind   |
+| Mass      | float64 | Mass of the particle at snapnum             |
+| haloId    | int32   | haloId of the particle at snapnum           |
+| (Mloss)   | float64 | Mass loss since the previous snapshot       |
+| (birthId) | int32   | The birthplace of the PhEW particle         |
+
+2. The /inittable/ CSV table (~Simulation.build_inittable()~)
+This table keeps records of all wind events in a simulation, such as when and where a wind particle was launched, the last time a wind particle appeared before fully evaporated, the mass of a wind particle at birth and death.
+
+| Field     | dtype   | Description                                   |
+|-----------+---------+-----------------------------------------------|
+| PId*      | int64   | Unique particle ID of a wind(PhEW) particle   |
+| snapfirst | int32   | The snapshot before becoming winds            |
+| minit     | float64 | Initial mass                                  |
+| birthId   | int32   | haloId of the halo in snapfirst               |
+| snaplast  | int32   | The last snapshot                             |
+| mlast     | float64 | Mass when the particle appeared the last time |
+
+3. The /progtable/ CSV table (~Snapshot.build_progtable()~)
+This table defines the prognitor of any halo from a snapshot in the previous snapshot. Recursively quering the table finds all previous progenitors of any given halo. We use this table to define the relation between any halo at a given snapshot and any halo in a previous snapshot, using
+~progen.get_relationship_between_halos()~
+
+| Field   | dtype   | Description                               |
+|---------+---------+-------------------------------------------|
+| haloId* | int32   | Unique haloId in the single snapshot      |
+| snapnum | int32   | Id of any previous snapshot               |
+| progId  | int32   | haloId of the progenitor in snapnum       |
+| hostId  | int32   | haloId of the host halo of the progenitor |
+| logMvir | float32 | Virial mass of the progentor              |
+| logMsub | float32 | Total mass of the host                    |
+
+4. The /hostmap/ CSV table (~Simulation.build_hostmap()~)
+
+*Temporary tables*
+1. The temporary /gptable/ Parquet table (~AccretionTracker.build_gptable()~)
+It tracks the locations and properties of all selected gas particles (e.g., from a single galaxy at some time) in all the previous snapshots.
+
+| Field   | dtype   | Description                                   |
+|---------+---------+-----------------------------------------------|
+| PId*    | int64   | Unique particle ID of a gas particle          |
+| snapnum | int32   | Id of any previous snapshot                   |
+| Mass    | float64 | Mass of the gas particle at snapnum           |
+| haloId  | int32   | haloId of the particle at snapnum             |
+| (Mgain) | float64 | Total mass gained since the previous snapshot |
+
+2. The temporary /pptable/ Parquet table (~AccretionTracker.build_pptable()~)
+A subset of the gigantic /phewtable/ with a selection of PId. It should contain a complete record for each PId selected, or, at least the derived field 'Mloss' for each (PId, snapnum) pair. A PId is selected if it ever appeared in any of the halos in the /gptable/.
+
+| Field      | dtype   | Description                                 |
+|------------+---------+---------------------------------------------|
+| PId*       | int64   | Unique particle ID of a wind(PhEW) particle |
+| snapnum    | int32   | Id of a snapshot                            |
+| haloId     | int32   | haloId of the particle at snapnum           |
+| Mass       | float64 | Mass of the particle at snapnum             |
+| (Mloss)    | float64 | Mass loss since the previous snapshot       |
+| snapfirst  | int32   | The first snapshot                          |
+| birthId    | int32   | haloId of where it is born                  |
+| (birthTag) | str     | Relationship tag of its birth halo          |
+
+*** Procedure
+
+
+* Scalable Data Pipelines with Apache Spark
+
+
+
+* References
+[[http://www.tapir.caltech.edu/~phopkins/Site/GIZMO.html][The GIZMO Simulation Code]]
+[[https://arxiv.org/abs/2005.13585][The Physically Evolved Winds (PhEW) Model, Journal Article, I. Model]]
+[[https://arxiv.org/abs/2106.01511][The Physically Evolved Winds (PhEW) Model, Journal Article, II. Implementation]]

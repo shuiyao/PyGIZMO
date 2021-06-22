@@ -158,5 +158,15 @@
 	    "dUmix": "float32",
 	    "dWork": "float32"
 	}
+    },
+    "split":
+    {
+	"columns": ["PId", "ParentId", "Mass", "atime"],
+	"dtypes": {
+	    "PId": "int64",
+	    "ParentId": "int64",
+	    "Mass": "float64",
+	    "atime": "float32"
+	}
     }
 }
