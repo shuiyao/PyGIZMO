@@ -286,6 +286,6 @@ class Halo3D(object):
 
 snap = snapshot.Snapshot('l25n144-test', 108)
 h3d = Halo3D(snap, haloid=147)
-h3d.draw()
-plt.show()
+# h3d.draw()
+# plt.show()
 
