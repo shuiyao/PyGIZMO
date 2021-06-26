@@ -332,6 +332,15 @@ This table defines the prognitor of any halo from a snapshot in the previous sna
 
 4. The /hostmap/ CSV table (~Simulation.build_hostmap()~)
 
+5. The /splittable/ CSV table (~Simulation.build_splittable()~)
+| Field    | dtype   | Description                                 |
+|----------+---------+---------------------------------------------|
+| PId*     | int64   | Unique particle ID                          |
+| parentId | int64   | The ID of its parent from whom it was split |
+| Mass     | float64 | The mass of the parent before splitting     |
+| atime    | float32 | Time of splitting                           |
+| snapnext | int32   | Next snapshot since splitting               |
+
 *Temporary tables*
 1. The temporary /gptable/ Parquet table (~AccretionTracker.build_gptable()~)
 It tracks the locations and properties of all selected gas particles (e.g., from a single galaxy at some time) in all the previous snapshots.
@@ -359,6 +368,13 @@ A subset of the gigantic /phewtable/ with a selection of PId. It should contain 
 | (birthTag) | str     | Relationship tag of its birth halo          |
 
 *** Procedure
+
++ Compute the Mgain field of gptable
+  - Use window function to compute the mass gained since last snapshot.
+  - In case there was splitting between the last snapshot and the current snapshot, gather information from the splittable and update the rows where a split happened.
+    ~AccretionTracker.update_mgain_for_split_events()~
+    - If this is a new born particle, define mgain = gptable.Mass - splittable.Mass / 2
+    - If this is a splitting particle, define mgain = mgain + splittable.Mass / 2
 
 
 * Scalable Data Pipelines with Apache Spark

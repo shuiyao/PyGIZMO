@@ -25,7 +25,6 @@ __mode__ = "X"
 import numpy as np
 import pandas as pd
 import snapshot
-from myinit import *
 import utils
 from utils import talk
 from tqdm import tqdm
@@ -393,7 +392,7 @@ class AccretionTracker():
     def compute_mgain_partition_by_pId(gptable, spark=None):
         '''
         For each gas particle in the gptable, compute its mass gain since last
-        snapshot.
+        snapshot. This does not account for splitting particles yet. 
         '''
         if('Mgain' in gptable.columns):
             talk("Mgain is already found in gptable", "talky")
@@ -407,6 +406,36 @@ class AccretionTracker():
             w = Window.partitionBy(gp.PId).orderBy(gp.snapnum)
             return gptable.withColumn('Mgain', gptable.Mass - sF.lag('Mass',1).over(w)).na.fill(0.0)
 
+    @staticmethod
+    def update_mgain_for_split_events(gptable, splittable):
+        '''
+        In case there was splitting between the last snapshot and the current 
+        snapshot, gather information from the splittable and update the rows 
+        where a split happened.
+          - If this is a new born particle, 
+            define mgain = gptable.Mass - splittable.Mass / 2
+          - If this is a splitting particle, 
+            define mgain = mgain + splittable.Mass / 2
+        '''
+
+        df_new = splittable[['PId','snapnext','Mass']]
+        df_new['dMass'] = df_new['Mass'] / 2
+
+        df_spt = splittable[['parentId','snapnext','Mass']]
+        df_spt['dMass'] = df_spt['Mass'] / 2
+        df_spt.rename(columns={'parentId':'PId'}, inplace=True)
+
+        df = pd.concat([df.new['PId','snapnext','dMass'],
+                        df.spt['PId','snapnext','dMass']], axis=0)
+        df = df.groupby(['PId','snapnext'])['dMass'].sum()
+        
+        # Now select only parentIds that are in the gptable
+        df = pd.merge(gptable[['PId', 'snapnum']], df, how='left',
+                      left_on=['PId','snapnum'], right_index=True)
+        df['dMass'] = df['dMass'].fillna(0.0)
+        df['Mgain'] = df['Mgain'] + df['dMass']
+        df.drop(['dMass'], axis=1, inplace=True)
+        return df
 
     def build_temporary_tables_for_galaxy(self, galIdTarget, rebuild=False, spark=None):
         '''
@@ -595,21 +624,40 @@ import matplotlib.pyplot as plt
 # plt.title("Wind material accumulation history for gas particles in a galaxy")
 
 # Historical locations of ISM gas of a galaxy in the current snapshot.
+
+from pdb import set_trace
 def show_1():
-    mass_by_relation = act.gptable.groupby(['snapnum','relation']).Mass.sum()
+    snap.load_gas_particles(['PId','Tmax'])
+    df = pd.merge(act.gptable, snap.gp, left_on='PId', right_on='PId')
+    
+    mass_by_relation = df.groupby(['snapnum','relation']).Mass.sum()
     mass_by_relation = mass_by_relation.reset_index()
     mtot = mass_by_relation.groupby('snapnum').Mass.sum()
     mtot = pd.DataFrame({'Mass':mtot, 'relation':'TOT'}).reset_index()
     mass_by_relation = pd.concat([mass_by_relation, mtot], axis=0)
     # ci = 95 as default
     sns.lineplot(data=mass_by_relation, hue='relation', x='snapnum', y='Mass', legend='brief')
+
+    # Hot particles only
+    df = df[df.Tmax > 5.5]
+    mass_by_relation = df.groupby(['snapnum','relation']).Mass.sum()
+    mass_by_relation = mass_by_relation.reset_index()
+    mtot = mass_by_relation.groupby('snapnum').Mass.sum()
+    mtot = pd.DataFrame({'Mass':mtot, 'relation':'TOT'}).reset_index()
+    mass_by_relation = pd.concat([mass_by_relation, mtot], axis=0)
+    # ci = 95 as default
+    sns.lineplot(data=mass_by_relation, hue='relation', x='snapnum', y='Mass', linestyle='--', legend=None)
+
     plt.title("Historical locations of gas in a massive galaxy at z=0")
 
-show_1()
-plt.axvline(78, linestyle="--", color='k')
-plt.axvline(58, linestyle=":", color='k')
-plt.savefig(DIRS['FIGURE']+"tmp.pdf")
-plt.close()
+
+if(__mode__ == "__show__"):
+    show_1()
+    plt.axvline(78, linestyle="--", color='k')
+    plt.axvline(58, linestyle=":", color='k')
+    # plt.savefig(DIRS['FIGURE']+"tmp.pdf")
+    plt.show()
+    # plt.close()
 
 # gptable is correct.
 # pptable birthTag is NaN when birthId == 0
