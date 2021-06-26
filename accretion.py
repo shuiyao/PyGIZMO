@@ -563,7 +563,8 @@ galIdTarget = 715 # Npart = 28, logMgal = 9.5, within 0.8-0.9 range
 
 # 568, 715, 1185
 
-__mode__ = "__loadX__"
+galIdTarget = 759
+__mode__ = "__load__"
 
 if(__mode__ == "__load__"):
     model = "l25n144-test"    
