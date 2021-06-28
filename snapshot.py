@@ -26,7 +26,7 @@ PATHS = cfg['Paths']
 
 class Snapshot(object):
     
-    def __init__(self, model, snapnum):
+    def __init__(self, model, snapnum, verbose=None):
         self._model = model
         self._snapnum = snapnum
         self._path_data = os.path.join(PATHS['data'], model)
@@ -34,6 +34,7 @@ class Snapshot(object):
         self._path_workdir = os.path.join(PATHS['workdir'], model)
         self._path_tmpdir = os.path.join(PATHS['tmpdir'], model)
         self._path_figure = os.path.join(PATHS['figure'], model)
+        self.verbose = verbose
 
         if(not os.path.exists(self._path_workdir)):
             os.mkdir(self._path_workdir)
@@ -83,7 +84,7 @@ class Snapshot(object):
         self._progtable = None
         self._act = None
 
-        talk(self.__str__(), "normal")
+        talk(self.__str__(), "normal", self.verbose)
 
     @classmethod
     def from_file(cls, path_hdf5):

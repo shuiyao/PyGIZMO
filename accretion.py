@@ -34,8 +34,11 @@ from config import cfg
 import pyarrow as pa
 import pyarrow.parquet as pq
 
+import os
 import pdb
 import simulation
+
+from importlib import reload
 
 schema_gptable = {'columns':['PId','snapnum','Mass','haloId','Mgain','relation'],
                   'dtypes':{'PId':'int64',
@@ -112,6 +115,7 @@ class AccretionTracker():
             self._simulation.load_phewtable()            
         self._simulation.load_hostmap()
         self._snap.load_progtable()
+        self._simulation.build_splittable()
 
     def load_gptable(self, galIdTarget, verbose='talky'):
         fname = "gptable_{:03d}_{:05d}.parquet".format(self.snapnum, galIdTarget)
@@ -142,8 +146,7 @@ class AccretionTracker():
 
         snaplast = self.snapnum
         
-        # fname = "gptable_{:03d}_{:05d}.parquet".format(self.snapnum, galIdTarget)
-        fname = "gptable.parquet"
+        fname = "gptable_{:03d}_{:05d}.parquet".format(self.snapnum, galIdTarget)
         path_gptable = os.path.join(self.path_base, fname)
 
         if(rebuild==False and os.path.exists(path_gptable)):
@@ -155,11 +158,41 @@ class AccretionTracker():
         talk("Building gptable for {} gas particles".format(len(pidlist)), 'normal')
         gptable = None
         for snapnum in tqdm(range(snapstart, snaplast+1), desc='snapnum', ascii=True):
-            snap = snapshot.Snapshot(model, snapnum)
+            snap = snapshot.Snapshot(model, snapnum, verbose='talky')
             snap.load_gas_particles(['PId','Mass','haloId'])
-            # gp = snap.gp.query('PId in @pidlist')
-            gp = snap.gp.loc[snap.gp.PId.isin(pidlist), :]
+
+            # From pidlist infer all PIds needed from this snapshot
+            # From the ancestor table, find the smallest snapnext that is larger than the current snapnum. For example, the history of particle Id=8 being:
+            # PId   4   4   6   6   6   6   6   6   6   8   8   8
+            # Gen   2   2   1   1   1   1   1   1   1   0   0   0
+            # Mass  m/4 m/4 m/2 m/2 m/2 m/2 m/2 m/2 m/2 m   m   m
+            #               s1              cur         s2
+            # At current time, we found the next splitting at s2, where:
+            # PId=8, parentId=6, snapnext=s2
+            parents = self._ancestors.query('snapnext > @snapnum').reset_index()
+            parents = parents.loc[parents.groupby('PId').gen.idxmax()].reset_index()
+            pidtosearch = set(pidlist + list(parents.parentId.drop_duplicates()))
+            
+            gp = snap.gp.loc[snap.gp.PId.isin(pidtosearch), :]
             gp.loc[:,'snapnum'] = snapnum
+
+            # Replace the ancestors' PIds at the current snapshot with the PIds of the descendents (when there are multiple descendents, make a copy for each descendent, INCLUDING itself (PId == parentId, but the particle has splitted)).
+            # Might be multiple instances parentId -> multiple PId
+            gp_parents = pd.merge(gp, parents[['PId', 'parentId', 'gen']],
+                                  left_on='PId', right_on='parentId',
+                                  suffixes=("_l", None))
+            # Should reduce particle Mass according to its generation
+            gp_parents.Mass = gp_parents.Mass / (2.0 ** gp_parents.gen)
+            # gp_parents.drop(['PId_l', 'parentId', 'gen'], axis=1, inplace=True)
+            gp_parents.drop(['PId_l', 'parentId'], axis=1, inplace=True)
+
+            gp = gp[gp.PId.isin(pidlist)]
+            gp = gp[~gp.PId.isin(gp_parents.PId)]
+            gp['gen'] = 0
+            gp = pd.concat([gp, gp_parents])
+            # 108532
+
+            # Attach to the main table
             gptable = gp.copy() if gptable is None else pd.concat([gptable, gp])
 
         gptable = gptable.set_index('PId').sort_values('snapnum')
@@ -257,6 +290,78 @@ class AccretionTracker():
         schema = utils.pyarrow_read_schema(schema_pptable)
         tab = pa.Table.from_pandas(self.pptable, schema=schema, preserve_index=True)
         pq.write_table(tab, path_pptable)
+
+    @staticmethod
+    def _find_particle_ancestors(splittable, pidlist):
+        '''
+        In case there is splitting, we need to find all the ancestors of a 
+        gas particle in order to figure out where its wind material came from 
+        before it spawned from its parent.
+        Furthermore, we also need to find all the split events for any of the 
+        parents.
+
+        Returns
+        -------
+        ancestors: pandas.DataFrame
+            Columns: PId, parentId, snapnext, gen
+        '''
+
+        # Find the maximum generation of a particle when it was created/spawned
+        maxgen = splittable.groupby('parentId')['parentGen'].max().to_dict()
+        
+        df = splittable.loc[splittable.PId.isin(pidlist),
+                            ['PId','parentId','Mass','snapnext','parentGen']]
+
+        # At the time when the PId was spawned
+        df['gen'] = df['PId'].map(maxgen).fillna(0).astype('int32') + 1
+        df_next = df.copy()
+        i, max_iter = 0, 10
+        # Find the parent of parent until no more
+        while(i < max_iter):
+            i = i + 1
+            # Does the parent have a grandparent? (not self).
+            # [<PId>, parentId*] -> [PId*, parentId]
+            df_next = pd.merge(df_next[['PId', 'parentId', 'gen', 'parentGen']],
+                               splittable,
+                               how='inner', left_on='parentId', right_on='PId',
+                               suffixes=("_l", None))
+            # If no more ancestors found, break the loop
+            if(df_next.empty):
+                break
+            # How many generations have passed between the time when the parent
+            # was spawned and the time it spawns the PId?
+            df_next['gen'] = df_next.gen \
+                + df_next['parentId_l'].map(maxgen).fillna(0).astype('int32') \
+                - df_next['parentGen_l'] + 1
+            df_next.drop(['parentId_l','parentGen_l','atime','PId'], axis=1, inplace=True)
+            df_next.rename(columns={'PId_l':'PId'}, inplace=True)
+            df = pd.concat([df, df_next], axis=0)
+        if(i == max_iter):
+            warnings.warn("Maximum iterations {} reached.".format(max_iter))
+
+        # Self-splitting
+        df_self = splittable.loc[splittable.parentId.isin(pidlist+list(df.parentId)),
+                                 ['parentId','Mass','snapnext','parentGen']]
+        # Does the parent have previous self-splitting?
+        df_tmp = pd.merge(df[['PId','parentId','gen','parentGen']],
+                          df_self[['parentId','parentGen','Mass','snapnext']],
+                          how='inner', on='parentId',
+                          suffixes=(None, "_r"))
+        df_tmp = df_tmp.query('parentGen_r > parentGen')
+        df_tmp['gen'] = df_tmp.gen \
+            + df_tmp['parentGen_r'] - df_tmp['parentGen']
+        df_tmp.drop(['parentGen_r'], axis=1, inplace=True)
+            
+        df_self['gen'] = df_self['parentGen']
+        df_self['PId'] = df_self['parentId']
+
+        # df_self contains particles out of the pidlist
+
+        df = pd.concat([df, df_tmp, df_self], axis=0)
+        # Sanity Check:
+        # grp = df.groupby('PId')
+        # grp.gen.count() - grp.gen.max() should be all 0
+        return df[df.PId.isin(pidlist)]
 
     @staticmethod
     def define_halo_relationship(progId, progHost, haloId, hostId):
@@ -418,22 +523,35 @@ class AccretionTracker():
             define mgain = mgain + splittable.Mass / 2
         '''
 
-        df_new = splittable[['PId','snapnext','Mass']]
-        df_new['dMass'] = df_new['Mass'] / 2
+        # Splitted particle, add back the lost portion
+        df = pd.merge(gptable, ancestors, how='left',
+                      left_on=['PId','snapnum'], right_on=['PId','snapnext'],
+                      suffixes=(None, '_r'))
+        df.Mass_r = df.Mass_r.fillna(0.0) / 2.0
+        df.Mgain = df.Mgain + df.Mass_r
 
-        df_spt = splittable[['parentId','snapnext','Mass']]
+        
+        df_spt = [['parentId','snapnext','Mass']]
         df_spt['dMass'] = df_spt['Mass'] / 2
         df_spt.rename(columns={'parentId':'PId'}, inplace=True)
 
-        df = pd.concat([df.new['PId','snapnext','dMass'],
-                        df.spt['PId','snapnext','dMass']], axis=0)
-        df = df.groupby(['PId','snapnext'])['dMass'].sum()
+        df = pd.concat([df_new['PId','snapnext','dMass'],
+                        df_spt['PId','snapnext','dMass']], axis=0)
+
+        df_spt = df_spt.groupby(['PId','snapnext'])['dMass'].sum()
+        df_spt = pd.merge(gptable, df_spt, how='inner',
+                          left_on=['PId','snapnum'], right_index=True)
+        df_spt['dMass'] = df_spt['dMass'].fillna(0.0)
+        df_spt['Mgain'] = df_spt['Mgain'] + df_spt['dMass']
+
+        df_new = pd.merge(gptable, df_new[['PId','snapnext','dMass']], how='inner',
+                          left_on=['PId','snapnum'], right_on=['PId','snapnext'])
+        df_new['dMass'] = df_new['dMass'].fillna(0.0)
+        df_new['Mgain'] = df_new['Mass'] - df_new['dMass']
+
+        df = pd.concat([df_new, df_spt], axis=0)
         
         # Now select only parentIds that are in the gptable
-        df = pd.merge(gptable[['PId', 'snapnum']], df, how='left',
-                      left_on=['PId','snapnum'], right_index=True)
-        df['dMass'] = df['dMass'].fillna(0.0)
-        df['Mgain'] = df['Mgain'] + df['dMass']
         df.drop(['dMass'], axis=1, inplace=True)
         return df
 
@@ -447,7 +565,10 @@ class AccretionTracker():
         talk("\nAccretionTracker: Building temporary tables for galId={} at snapnum={}".format(galIdTarget, self.snapnum), "talky")
         # Get the particle ID list to track
         if(not self.load_gptable(galIdTarget, verbose='quiet') or rebuild==True):
-            pidlist = self._snap.get_gas_particles_in_galaxy(galIdTarget)        
+            pidlist = self._snap.get_gas_particles_in_galaxy(galIdTarget)
+
+            # In case of splitting, find all ancestors of any gas particle
+            self._ancestors = self.__class__._find_particle_ancestors(self._simulation._splittable, pidlist)
 
             # Create/Load gptable
             self.build_gptable(pidlist, rebuild=True)
@@ -592,8 +713,7 @@ galIdTarget = 715 # Npart = 28, logMgal = 9.5, within 0.8-0.9 range
 
 # 568, 715, 1185
 
-galIdTarget = 759
-__mode__ = "__load__"
+__mode__ = "__loadX__"
 
 if(__mode__ == "__load__"):
     model = "l25n144-test"    
@@ -659,21 +779,3 @@ if(__mode__ == "__show__"):
     plt.show()
     # plt.close()
 
-# gptable is correct.
-# pptable birthTag is NaN when birthId == 0
-#  - 71260 out of 583652 PhEWs have birthId == 0.
-
-    # From here on, galaxy level
-    # Get all gas particles from the target galaxy
-
-    # Want to do a couple of things:
-    # 1a. Find all gas particles currently in a galaxy
-    # 1b. Find all recent accretion onto the galaxy
-    # 2. Classify the primodial component into COLD and HOT
-    # 3. Get the wind accretion info (SELF, SAT, IGM, ...)
-    #   - Diagnostic: For each gas particle, plot Mgain vs. snapnum
-    #     - Experiment with wacc.1185.csv
-    # 4. Add up all COLD, HOT, SELF, SAT, IGM for the galaxy
-    # Another track:
-    # Find the mass fraction in SELF, CEN, SAT, IGM as a function of time.
-    # Just use the gptable and find curtag

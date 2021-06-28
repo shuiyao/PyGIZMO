@@ -65,10 +65,15 @@ def load_default_schema():
         schema = json.load(json_data)
     return schema
 
-def talk(text, verbose_level='always', err=False):
+def talk(text, verbose_level='always', verbose_limit=None, err=False):
+    if(verbose_limit is None):
+        verbose_limit = cfg['Verbose']['default']
+    else:
+        if(isinstance(verbose_limit, str)):        
+            verbose_limit = cfg['Verbose'][verbose_limit.lower()]
     if(isinstance(verbose_level, str)):
         verbose_level = cfg['Verbose'][verbose_level.lower()]
-    if(verbose_level > cfg['Verbose']['default']):
+    if(verbose_level > verbose_limit):
         return
     dest = sys.stderr if err else sys.stdout
     print(text, file=dest)

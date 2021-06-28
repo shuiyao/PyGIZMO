@@ -161,12 +161,12 @@
     },
     "split":
     {
-	"columns": ["PId", "ParentId", "Mass", "atime"],
+	"columns": ["PId", "parentId", "atime", "Mass"],
 	"dtypes": {
 	    "PId": "int64",
 	    "ParentId": "int64",
-	    "Mass": "float64",
-	    "atime": "float32"
+	    "atime": "float32",
+	    "Mass": "float64"
 	}
     }
 }

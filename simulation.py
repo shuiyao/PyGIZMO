@@ -39,12 +39,13 @@ schema_inittable = {'columns':['PId','snapfirst','minit','birthId',
                               'snaplast':'int32',
                               'mlast':'float64'}
 }
-schema_splittable = {'columns':['PId','parentId','Mass','atime','snapnext'],
+schema_splittable = {'columns':['PId','parentId','Mass','atime','snapnext','parentGen'],
                     'dtypes':{'PId':'int64',
                               'parentId':'int64',
                               'Mass':'float64',
                               'atime':'float32',
-                              'snapnext':'int32'}
+                              'snapnext':'int32',
+                              'parentGen':'int32'}
 }
 
 # model = "l12n144-phew-movie-200"
@@ -132,7 +133,7 @@ class Simulation():
 
         # Create new if not existed.
         dfi = winds.read_initwinds(self._path_winds, columns=['atime','PhEWKey','Mass','PID'], minPotIdField=True)
-        redz = utils.load_timeinfo_for_snapshots()
+        redz = Simulation.load_timeinfo_for_snapshots()
         dfi['snapfirst'] = dfi.atime.map(lambda x : bisect_right(redz.a, x)-1)
         dfi.rename(columns={'Mass':'minit','PID':'PId'}, inplace=True)
         grps = dfi.groupby('snapfirst')
@@ -198,11 +199,19 @@ class Simulation():
                 return splittable
 
         # Create new if not existed.
-        df = winds.read_split(self._path_winds) # TODO
-        redz = utils.load_timeinfo_for_snapshots()
-        df['snapnext'] = dfi.atime.map(lambda x : bisect_right(redz.a, x))
+        df = winds.read_split(self._path_winds)
+        redz = Simulation.load_timeinfo_for_snapshots()
+        df['snapnext'] = df.atime.map(lambda x : bisect_right(redz.a, x))
 
-        df = df[schema_splittable]
+        # Now do something fansy: get the generation (reverse order) of
+        # each splitting event.
+        # LOG: parentId=965499 splitted 7 times
+        parents = df.groupby('parentId')
+        df['parentGen'] = df.groupby('parentId')['atime']\
+                      .rank(ascending=False)\
+                      .astype('int32')
+
+        df = df[schema_splittable['columns']]
         
         df.to_csv(fout, index=False)
         self._splittable = df
@@ -295,7 +304,7 @@ class Simulation():
             
         phewtable = None
         for snapnum in tqdm(range(snapstart, snaplast), desc='snapnum', ascii=True):
-            snap = snapshot.Snapshot(sim.model, snapnum)
+            snap = snapshot.Snapshot(sim.model, snapnum, verbose='talky')
             snap.load_gas_particles(['PId','Mass','Mc','haloId'])
             gp = snap.gp.loc[snap.gp.Mc > 0, ['PId','Mass','haloId']]
             if(not gp.empty):
@@ -318,10 +327,12 @@ class Simulation():
         phewtable.snapnum = phewtable.snapnum.astype('int')
 
         # Write parquet file.
-        schema = utils.pyarrow_read_schema(schema_phewtable)
+        self._phewtable = phewtable
+        schema = schema_phewtable
+        schema['columns'].remove('Mloss')
+        schema = utils.pyarrow_read_schema(schema)
         tab = pa.Table.from_pandas(phewtable, schema=schema, preserve_index=False)
         pq.write_table(tab, path_phewtable)
-        self._phewtable = phewtable
         return phewtable
 
     def compute_mloss_partition_by_pId(self, overwrite=False, spark=None):
@@ -354,7 +365,7 @@ class Simulation():
             return
 
         talk("Computing the Mloss field for PhEW particles.", "normal")
-        
+
         if(spark is None):
             phewtable = self.load_phewtable()
             # This is a very expensive operation
@@ -372,7 +383,7 @@ class Simulation():
             phewtable.write.mode('overwrite').parquet(path_phewtable)
 
     @staticmethod
-    def load_timeinfo_for_snapshots(fredz="redshift.txt"):
+    def load_timeinfo_for_snapshots(fredz="data/redshift.txt"):
         '''
         Load the correspondence between snapnum and redshift and cosmic time.
         '''

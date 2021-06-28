@@ -27,8 +27,6 @@ def read_split(path_winds, nfiles=0, sep=',', schema=DefaultSchema):
         dfnew = pd.read_csv(filename, sep=sep, skiprows=skip,
                             names=cols,
                             dtype=schema['split']['dtypes'])
-        if(columns is not None):
-            dfnew = dfnew.loc[:,columns]
         df = dfnew.copy() if i == 0 else pd.concat([df, dfnew])
     return df
 
