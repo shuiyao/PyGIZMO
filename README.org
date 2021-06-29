@@ -223,7 +223,7 @@ I can use dark matter to trace halos.
 
 
 * Accretion Tracking Engine
-<<sec:accretiontracker>>
+<<sec:accretionTracker>>
 
 Analyzing the history of gas accretion into a galaxy is critical to understanding galaxy formation and evolution. The accretion tracking engine in PyGIZMO reconstructs the history of selected gas particles from a wide range of simulation outputs and classifies their accretion events into several categories that are physically motivated. The engine tracks selected gas particles across previous snapshots and analyzes their interactions with the galactic halos and wind particles over time.
 
@@ -240,9 +240,11 @@ This following example creates a pandas DataFrame that tracks the accretion hist
 >>> model = "l25n144-test"    
 >>> snap = snapshot.Snapshot(model, 108)
 >>> act = AccretionTracker.from_snapshot(snap)
+
+# Prepare all required permanent tables. Load if already existed, otherwise build new.
 >>> act.initialize()
 
-# Build temporary tables for selected particles from a galaxy specified by galIdTarget
+# Build temporary tables for selected particles from a galaxy specified by galIdTarget. Will take a while if the tables have not yet generated.
 >>> act.build_temporary_tables_for_galaxy(galIdTarget)
 
 # Run the engine and generate result
@@ -254,9 +256,11 @@ The resulted table can be used to answer many questions. For example, to find th
 >>> mwtable.groupby('birthTag')['Mgain'].sum()
 #+END_SRC 
 
-** Algorithm
 
-This following *diagram* demonstrates the algorithm for classifying gas particles according to their accretion history. In a typical scenario, one looks at all the gas particles that recently accreted into a galaxy (/target galaxy/) at some time, and classifies them into several accretion mode according their evolution histories at earlier times before accretion. PyGIZMO tracks each of the particle by their unique particle ID over previous snapshots and extracts key information that help classify the particle into one of the following /accretion modes/:
+** Algorithm
+*** Classification scheme
+<<sec:categories>>
+This following *diagram* demonstrates the algorithm for classifying gas particles according to their accretion history. In a typical scenario, one looks at all the gas particles (form a list of particle IDs, i.e., pidlist) that recently accreted into a galaxy (/target galaxy/) at some time, and classifies them into several accretion mode according their evolution histories at earlier times before accretion. PyGIZMO tracks each of the particle by their unique particle ID over previous snapshots and extracts key information that help classify the particle into one of the following /accretion modes/:
 
 + /Merger/: The particle was found in another galaxy at some previous time (already accreted at least once prior to the current accretion event). 
 + /Primordial/: For first time accretion, the original component of a gas particle is classified as primordial accretion, which has two sub-categories
@@ -268,7 +272,44 @@ This following *diagram* demonstrates the algorithm for classifying gas particle
   - /Recycled from satellite/: The birth site was the satellite galaxy of the progenitor
   - /Recycled from IGM/: The birth site and the progenitor were unrelated at the time of wind launch.
 
+*** Tracking wind component
+<<sec:windTracking>>
 More about tracking recycled materials: In a PhEW simulation, a normal gas particle may constantly get wind materials from different neighboring wind particles. Tracking every single mass flow between normal gas particles and wind particles and keeping track of where the wind particles came from will take too much disc space and is therefore impractical. Instead, we provide an approximate solution ('Bayesian machine' in the diagram) relying on computing the posterior probability of a gas particle getting materials from each of the recycled categories between two snapshots. See this *journal article* for details.
+
+PubSub
+
+*** Particle splitting
+<<sec:particleSplitting>>
+In later version of the PhEW, a gas particle splits into two halves when its mass grows to over 3 times its original mass. One of the newly spawned particle will inherit the particle ID while the other one will have a new unique ID. The simulation outputs each of the splitting event into a log files like "split.snapnum". The problem is, how to reconstruct the split history of any given gas particle from these files?
+
+<<def:generation>>
+Definition of /generation/: Tracing back in time and starting from 0, the /generation/ of the particle increases by 1 every time when it splitted in the past. If the particle was spawned at some earlier time from a parent, the /generation/ will keep increasing for the parent. 
+
+The following example tracks the /generation/ of a particle with PId = 3, which was spawned from another particle with PId = 12, which was then spawned from PId = 15. The particle splitted at snapnum = 106 and snapnum = 103.
+
+snapnum:     108 107 106 105 104 103 102 101 100 099 098
+ParticleID:  3   3   3   3   3   3   12  12  12  12  15 
+Split                X           X   X       X       X
+generation:  0   0   1   1   1   2   3   3   4   5   6
+
+The particle was at generation = 6 at snapnum = 98. Therefore we assume that only 1/32 (2^-gen) of the mass of particle PId = 15 ended up in particle PId = 3 at snapnum = 108.
+
+Firstly, a permanent table, /splittable/, is built for each simulation (~Simulation.build_splittable()~). Each entry corresponds to a split event and keeps the newly spawned particle ID (PId), the ID of the particle that splitted (parentId), the next snapnum after the split (snapnext) and the generation of the *splitting* particle at this particular splitting event (parentGen).
+
+Then, for a selection of particles, a temporary table, /ancestors/, which basically reconstructs the above diagram, is built with
+~AccretionTracker._find_particle_ancestors(splittable, pidlist)~
+
+In each snapshot, ~AccretionTracker.build_gptable()~ loads all particles in the pidlist as well as their parents at that snapshot. The mass of each particle is reduced to match the generation number. For example, using the diagram above, at snapnum = 102, particle(3) did not exist yet, so the program looks for its parent particle(12) and reduce its mass to 1/8.
+
+At any time, one particle could be the parent of multiple particles from later time. In these cases, information of the parent particle is copied multiple times for each of its descendents. However, the generation number for these descendents may not be the same. For example, the following diagram demonstrates the history of particle(4):
+
+snapnum:     108 107 106 105 104 103 102 101 100 099 098
+ParticleID:  4   4   4   4   4   4   4   4   12  12  15 
+Split                                X       X       X
+generation:  0   0   0   0   0   0   1   1   2   2   3
+
+In the end, the final /gptable/ should contain len(pidlist) unique PIds, each having one entry for each snapshot.
+        
 
 ** Implementation
 
@@ -277,16 +318,16 @@ The accretion tracking engine relies on a set of permanent tables that need to b
 *** Data structures and schema
 
 #+CAPTION[Table]: A list of Tables
-| Table     | Format  | Path  | Sources                     | Description                              |
-|-----------+---------+-------+-----------------------------+------------------------------------------|
-| inittable | CSV     | $DATA | snapshot, initwinds, rejoin | Wind events (launch/rejoin)              |
-| phewtable | parquet | $DATA | snapshot, inittable, halos  | PhEW particles                           |
-| progtable | CSV     | $WORK | snapshot, halos             | Halo progenitors at earlier times        |
-| hostmap   | CSV     | $WORK | halos                       | The host for each halo                   |
-| gptable   | parquet | $TMP  | snapshot, halos             | History of gas particles from the target |
-| pptable   | parquet | $TMP  | snapshot, phewtable         | History of relevant PhEW particles       |
-| halotable | CSV     | $TMP  | gptable, pptable, halos     | Relevant Halos                           |
-
+| Table      | Format  | Path  | Sources                     | Description                              |
+|------------+---------+-------+-----------------------------+------------------------------------------|
+| inittable  | CSV     | $DATA | snapshot, initwinds, rejoin | Wind events (launch/rejoin)              |
+| phewtable  | parquet | $DATA | snapshot, inittable, halos  | PhEW particles                           |
+| progtable  | CSV     | $WORK | snapshot, halos             | Halo progenitors at earlier times        |
+| hostmap    | CSV     | $WORK | halos                       | The host for each halo                   |
+| splittable | CSV     | $WORK | split                       | Particle splitting event                 |
+| gptable    | parquet | $TMP  | snapshot, halos             | History of gas particles from the target |
+| pptable    | parquet | $TMP  | snapshot, phewtable         | History of relevant PhEW particles       |
+| halotable  | CSV     | $TMP  | gptable, pptable, halos     | Relevant Halos                           |
 
 Notes: 
 + The source column indicates the raw data from which the table is built.
@@ -294,7 +335,6 @@ Notes:
 
 *Permanent tables*
 1. The /phewtable/ parquet table (~Simulation.build_phewtable~)
-It's a gigantic table that needs to be frequently queried. It contains the attributes, such as mass and haloId, of all PhEW particles in any snapshot. The Mloss field is derived for each particle (PId) over time. Assume at each snapshot, a total mass of Mloss was lost from the PhEW particle (PId) to the halo (haloId) where it was found at that snapshot.
 
 | Field     | dtype   | Description                                 |
 |-----------+---------+---------------------------------------------|
@@ -305,8 +345,9 @@ It's a gigantic table that needs to be frequently queried. It contains the attri
 | (Mloss)   | float64 | Mass loss since the previous snapshot       |
 | (birthId) | int32   | The birthplace of the PhEW particle         |
 
+It's a gigantic table that needs to be frequently queried. It contains the attributes, such as mass and haloId, of all PhEW particles in any snapshot. The Mloss field is derived for each particle (PId) over time. Assume at each snapshot, a total mass of Mloss was lost from the PhEW particle (PId) to the halo (haloId) where it was found at that snapshot.
+
 2. The /inittable/ CSV table (~Simulation.build_inittable()~)
-This table keeps records of all wind events in a simulation, such as when and where a wind particle was launched, the last time a wind particle appeared before fully evaporated, the mass of a wind particle at birth and death.
 
 | Field     | dtype   | Description                                   |
 |-----------+---------+-----------------------------------------------|
@@ -317,9 +358,9 @@ This table keeps records of all wind events in a simulation, such as when and wh
 | snaplast  | int32   | The last snapshot                             |
 | mlast     | float64 | Mass when the particle appeared the last time |
 
+This table keeps records of all wind events in a simulation, such as when and where a wind particle was launched, the last time a wind particle appeared before fully evaporated, the mass of a wind particle at birth and death.
+
 3. The /progtable/ CSV table (~Snapshot.build_progtable()~)
-This table defines the prognitor of any halo from a snapshot in the previous snapshot. Recursively quering the table finds all previous progenitors of any given halo. We use this table to define the relation between any halo at a given snapshot and any halo in a previous snapshot, using
-~progen.get_relationship_between_halos()~
 
 | Field   | dtype   | Description                               |
 |---------+---------+-------------------------------------------|
@@ -330,9 +371,14 @@ This table defines the prognitor of any halo from a snapshot in the previous sna
 | logMvir | float32 | Virial mass of the progentor              |
 | logMsub | float32 | Total mass of the host                    |
 
+This table defines the prognitor of any halo from a snapshot in the previous snapshot. Recursively quering the table finds all previous progenitors of any given halo. We use this table to define the relation between any halo at a given snapshot and any halo in a previous snapshot, using ~progen.get_relationship_between_halos()~
+
 4. The /hostmap/ CSV table (~Simulation.build_hostmap()~)
 
+This maps (snapnum, haloId) to hostId, the host galaxy/halo of the haloId at snapnum.
+
 5. The /splittable/ CSV table (~Simulation.build_splittable()~)
+
 | Field    | dtype   | Description                                 |
 |----------+---------+---------------------------------------------|
 | PId*     | int64   | Unique particle ID                          |
@@ -340,11 +386,12 @@ This table defines the prognitor of any halo from a snapshot in the previous sna
 | Mass     | float64 | The mass of the parent before splitting     |
 | atime    | float32 | Time of splitting                           |
 | snapnext | int32   | Next snapshot since splitting               |
+| gen      | int32   | The generation at the current time          |
 
 *Temporary tables*
 1. The temporary /gptable/ Parquet table (~AccretionTracker.build_gptable()~)
-It tracks the locations and properties of all selected gas particles (e.g., from a single galaxy at some time) in all the previous snapshots.
 
+#+Name: gptable
 | Field   | dtype   | Description                                   |
 |---------+---------+-----------------------------------------------|
 | PId*    | int64   | Unique particle ID of a gas particle          |
@@ -353,9 +400,20 @@ It tracks the locations and properties of all selected gas particles (e.g., from
 | haloId  | int32   | haloId of the particle at snapnum             |
 | (Mgain) | float64 | Total mass gained since the previous snapshot |
 
-2. The temporary /pptable/ Parquet table (~AccretionTracker.build_pptable()~)
-A subset of the gigantic /phewtable/ with a selection of PId. It should contain a complete record for each PId selected, or, at least the derived field 'Mloss' for each (PId, snapnum) pair. A PId is selected if it ever appeared in any of the halos in the /gptable/.
+It tracks the locations and properties of all selected gas particles (e.g., from a single galaxy at some time) in all the previous snapshots since the beginning of the simulation.
 
+If the gas particle did not exist at any snapshot, find its parent at that snapshot (defined in the /splittable/).
+
+If the particle has splitted before, reduce the Mass be a factor of 2^-gen, where 'gen' is the [[def:generation][generation number]] of the particle.
+
+Finally, a 'Mgain' field is computed as the total mass that the particle gained since the last snapshot, using a window function on each PId.
+~AccretionTracker.compute_mgain_partition_by_Pid(gptable)~
+
+The newly generated table is saved as ~gptable_{:03d}_{:05d}.parquet~, where ':03d', ':05d' are snapnum and galIdTarget, respectively.
+
+2. The temporary /pptable/ Parquet table (~AccretionTracker.build_pptable(inittable, phewtable)~)
+
+#+Name: pptable
 | Field      | dtype   | Description                                 |
 |------------+---------+---------------------------------------------|
 | PId*       | int64   | Unique particle ID of a wind(PhEW) particle |
@@ -367,14 +425,57 @@ A subset of the gigantic /phewtable/ with a selection of PId. It should contain 
 | birthId    | int32   | haloId of where it is born                  |
 | (birthTag) | str     | Relationship tag of its birth halo          |
 
-*** Procedure
+A subset of the gigantic /phewtable/ with a selection of PhEW particles. A PhEW particle is selected if it ever appeared in any of the halos in the /gptable/. The table should contain a complete record for each selected PhEW particle, i.e., any snapshot in which the particle existed.
 
-+ Compute the Mgain field of gptable
-  - Use window function to compute the mass gained since last snapshot.
-  - In case there was splitting between the last snapshot and the current snapshot, gather information from the splittable and update the rows where a split happened.
-    ~AccretionTracker.update_mgain_for_split_events()~
-    - If this is a new born particle, define mgain = gptable.Mass - splittable.Mass / 2
-    - If this is a splitting particle, define mgain = mgain + splittable.Mass / 2
+The 'Mloss' field is computed as the total mass that the particle lost since the last snapshot, using a window function on each PId.
+
+For each PhEW particle, a birthId indicating its birth galaxy, is found from the /inittable/.
+
+Finally, a birthTag is generated that defines the relationship between the birth galaxy and the target galaxy. This is done with:
+~AccretionTracker.define_halo_relationship(progId,progHost,haloId,hostId)~
+
+The newly generated table is saved as ~pptable_{:03d}_{:05d}.parquet~, where ':03d', ':05d' are snapnum and galIdTarget, respectively.
+
+*** Procedure
+**** Selecting particles
+Select the particles that we want to track. The list of their particle IDs (pidlist) is an input to the AccretionTracker. Depending on the user case, the particles could be:
++ Recently accreted particles on a galaxy.
+  API: ~pidlist = Snapshot.get_recent_accretion(galIdTarget)~ (TODO)
++ Current ISM particles within a galaxy(galIdTarget)
+  API: ~pidlist = Snapshot.get_gas_particles_in_galaxy(galIdTarget)~
+
+Note that, if the particles do not come from a same galaxy, one needs to get a list of all of their host galaxies and build the temporary tables for every single galaxy individually. 
+
+**** Build/Load permanent tables
+~AccretionTracker.initialize()~
+
+**** Build temporary tables for any galaxy(galIdTarget)
+~AccretionTracker.build_temporary_tables_for_galaxy(galIdTarget)~
+1. Build the [[sec:particleSplitting][splitting histories]] of each particle in the /pidlist/.
+  + ~AccretionTracker._find_particle_ancestors(splittable, pidlist)~
+  + This creates a temporary table ~AccretionTracker._ancestors~
+2. Build the [[gptable][gptable]].
+  + ~AccretionTracker.build_gptable(pidlist)~
+  + Load gas particles (or their parents) from each snapshot
+  + Compute the total mass they gained between two snapshots
+3. Build the [[pptable][pptable]].
+  + ~AccretionTracker.build_pptable(inittable, phewtable)~
+  + Select all PhEW particles that potentially interacted with the particles in the /pidlist/, from the /phewtable/.
+  + Find the birth galaxy for each PhEW particle using information from the /inittable/.
+  + Compute the mass loss of each PhEW particle between any two consecutive snapshots.
+  + Add a birthTag to each PhEW particle that defines the relation between its birth galaxy and the target galaxy(galIdTarget). This operation needs /gptable/, /progtable/ and /hostmap/.
+  
+**** Classify and accumulate wind materials over time
+~AccretionTracker.compuate_wind_mass_partition_by_birthTag()~
+
+The algorithm is [[sec:windTracking][here]]. For the purpose of description here, assume all wind materials lost from the PhEW particles are deposited uniformly in the halo (the prior is unity).
+
+For each snapshot:
+1. Compute the total amount of wind materials deposited into each halo by PhEW particles since the last snapshot.
+2. Divide the amount into [[sec:categories][categories]] according to the birthTag of the PhEW particle.
+3. Find for each halo, the gas particles that it hosted at that snapshot.
+4. Compute the wind materials that those gas particles gained since the last snapshot, by category.
+5. Accumulate over time for each gas particle.
 
 
 * Scalable Data Pipelines with Apache Spark
