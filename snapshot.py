@@ -178,6 +178,9 @@ class Snapshot(object):
         fields_exist = set() if self.sp is None else set(self.sp.columns)
         fields = self._get_fields_todo(fields, fields_exist)
         df = self._load_hdf5_fields('star', fields['hdf5'], fields['pos'], fields['metals'])
+        if(df is None):
+            return
+        
         if(drop == True and fields['todrop'] != set()):
             self.sp.drop(fields['todrop'], axis=1, inplace=True)
         self.sp = df if self.sp is None else pd.concat([self.sp, df], axis=1)
@@ -220,7 +223,11 @@ class Snapshot(object):
         cols = {}
         elements = cfg['Simulation']['elements'].split(sep=',')        
         with h5py.File(self._path_hdf5, "r") as hf:
-            hdf5part = hf['PartType'+str(ptype)]
+            try:
+                hdf5part = hf['PartType'+str(ptype)]
+            except:
+                talk('Ignore non-existent PartType{}'.format(ptype), 'quiet')
+                return
             for field in fields_hdf5:
                 hdf5field = hdf5schema.loc[field].HDF5Field
                 dtype = hdf5schema.loc[field].PandasType
@@ -475,7 +482,7 @@ class Snapshot(object):
     def get_gas_particles_in_galaxy(self, galId):
         '''
         Get a list of particle IDs for all gas particles that belong to a given
-        halo. 
+        galaxy. 
 
         Parameters
         ----------
@@ -491,6 +498,26 @@ class Snapshot(object):
         gp = self.gp.query('galId == @galId')
         talk("{} gas particles loaded from galaxy #{}".format(gp.shape[0], galId), 'normal')
         return list(gp.PId)
+
+    def get_star_particles_in_galaxy(self, galId):
+        '''
+        Get a list of particle IDs for all star particles that belong to a given
+        galaxy. 
+
+        Parameters
+        ----------
+        galId: int.
+            The unique Id of the halo.
+
+        Returns
+        -------
+        pIdlist: list.
+        '''
+
+        self.load_star_particles(['PId','galId'])
+        sp = self.sp.query('galId == @galId')
+        talk("{} star particles loaded from galaxy #{}".format(sp.shape[0], galId), 'normal')
+        return list(sp.PId)
 
     def get_gas_particles_in_halo(self, haloId, include_ism=False):
         '''

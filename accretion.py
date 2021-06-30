@@ -129,7 +129,7 @@ class AccretionTracker():
             talk("gptable {} not found. Use build_gptable() to build new table.".format(fname), verbose)
             return False
 
-    def build_gptable(self, pidlist, snapstart=0, rebuild=False):
+    def build_gptable(self, pidlist, snapstart=0, include_stars=False, rebuild=False):
         '''
         Build the gptable for the particles to track. The particles are 
         specified by their particle IDs in the pidlist.
@@ -140,6 +140,8 @@ class AccretionTracker():
             List of particle IDs for which to build the table
         snapstart: int. Default = 0
             The first snapshot to start tracing the particles.
+        include_stars: boolean. Default = False.
+            If True, track the history star particles along with gas particles.
         rebuild: boolean. Default=False
             If True, rebuild the table even if a file exists.
         '''
@@ -185,12 +187,23 @@ class AccretionTracker():
             gp_parents.Mass = gp_parents.Mass / (2.0 ** gp_parents.gen)
             # gp_parents.drop(['PId_l', 'parentId', 'gen'], axis=1, inplace=True)
             gp_parents.drop(['PId_l', 'parentId'], axis=1, inplace=True)
-
             gp = gp[gp.PId.isin(pidlist)]
             gp = gp[~gp.PId.isin(gp_parents.PId)]
+
+            if(include_stars):
+                snap.load_star_particles(['PId','Mass','haloId'])
+                # Early time, no star particle
+                if(snap.sp is not None):
+                    sp = snap.sp.loc[snap.sp.PId.isin(pidlist), :]
+                    if(not sp.empty):
+                        sp.loc[:,'snapnum'] = snapnum
+                        gp = pd.concat([gp, sp])
+
+            # The star particles and 'virgin' gas particle has gen=0.
             gp['gen'] = 0
+
+            # Add those particles that have been a parent
             gp = pd.concat([gp, gp_parents])
-            # 108532
 
             # Attach to the main table
             gptable = gp.copy() if gptable is None else pd.concat([gptable, gp])
@@ -555,23 +568,35 @@ class AccretionTracker():
         df.drop(['dMass'], axis=1, inplace=True)
         return df
 
-    def build_temporary_tables_for_galaxy(self, galIdTarget, rebuild=False, spark=None):
+    def build_temporary_tables_for_galaxy(self, galIdTarget, rebuild=False, include_stars=False, spark=None):
         '''
         Build gptable and pptable for particles selected from galIdTarget.
         The permanent tables, inittable, phewtable, hostmap, progtable should 
         already be in place with the initialize() call.
+
+        Parameters
+        ----------
+        galIdTarget: int.
+            The galId of the target galaxy.
+        include_stars: boolean. Default = False.
+            If True, track the history star particles along with gas particles.
+        spark: 
+        rebuild: boolean. Default = False.
+            If True, rebuild the gptable, otherwise load existing file.
         '''
         
         talk("\nAccretionTracker: Building temporary tables for galId={} at snapnum={}".format(galIdTarget, self.snapnum), "talky")
         # Get the particle ID list to track
         if(not self.load_gptable(galIdTarget, verbose='quiet') or rebuild==True):
             pidlist = self._snap.get_gas_particles_in_galaxy(galIdTarget)
+            if(include_stars):
+                pidlist += self._snap.get_star_particles_in_galaxy(galIdTarget)
 
             # In case of splitting, find all ancestors of any gas particle
             self._ancestors = self.__class__._find_particle_ancestors(self._simulation._splittable, pidlist)
 
             # Create/Load gptable
-            self.build_gptable(pidlist, rebuild=True)
+            self.build_gptable(pidlist, include_stars=include_stars, rebuild=True)
             # Compute the 'Mgain' field for all gas particles in gptable
             self.gptable = self.__class__.compute_mgain_partition_by_pId(self.gptable)
             # Add their relations to galIdTarget
@@ -640,16 +665,24 @@ class AccretionTracker():
         if(not self.verify_temporary_tables()):
             print("gptable or pptable do not meet requirements yet.")
             return
-        
+
+        # Do for each halo (snapnum, haloId)
         grps = self.pptable.groupby(['snapnum', 'haloId'])
+        # total mloss to the halo by birthTag
         x = grps.apply(lambda x: x[['Mloss','birthTag']].groupby('birthTag').sum()).reset_index('birthTag')
         y = pd.merge(self.gptable, x, how='left', left_on=['snapnum', 'haloId'], right_on=['snapnum', 'haloId'])
+        # Mloss = NaN. no corresponding PhEW in that halo
+        y.birthTag = y.birthTag.fillna('IGM')
+        y.Mloss = y.Mloss.fillna(0.0)
         grps = y.groupby(['PId','snapnum'])
+        # each grp is a particle at a snapnum
+        # if not found, birthTag = NaN, but Mgain should be IGM?
         mwtable = grps.apply(lambda x : pd.DataFrame({
             'PId': x.PId,
             'snapnum': x.snapnum,
             'birthTag':x.birthTag,
-            'Mgain':x.Mgain * x.Mloss / x.Mloss.sum()})
+            'Mgain':x.Mgain * \
+            (1.0 if x.Mloss.sum() == 0.0 else x.Mloss / x.Mloss.sum())})
         )
         # mwindtable = z.groupby(['PId', 'birthTag']).sum()
         return mwtable
@@ -713,7 +746,7 @@ galIdTarget = 715 # Npart = 28, logMgal = 9.5, within 0.8-0.9 range
 
 # 568, 715, 1185
 
-__mode__ = "__loadX__"
+__mode__ = "__showX__"
 
 if(__mode__ == "__load__"):
     model = "l25n144-test"    
@@ -723,59 +756,4 @@ if(__mode__ == "__load__"):
     act.build_temporary_tables_for_galaxy(galIdTarget, rebuild=False)
     mwtable = act.compute_wind_mass_partition_by_birthtag()
     mwtable.groupby(['PId','birthTag'])['Mgain'].sum()
-
-import seaborn as sns
-import matplotlib.pyplot as plt
-
-# grp = mwtable.groupby(['PId','birthTag'])
-# x = grp['Mgain'].cumsum(skipna=True)
-# df2 = pd.concat([mwtable[['snapnum','birthTag']], x], axis=1)
-# mtot = df2.groupby('snapnum').Mgain.sum()
-# mtot = pd.DataFrame({'Mass':mtot, 'birthTag':'TOT'}).reset_index()
-# df2 = pd.concat([df2, mtot], axis=0)
-
-# tab.Mgain = tab.Mgain.fillna(0.0)
-# tab.birthTag = tab.birthTag.fillna('IGM')
-# mass_by_relation = tab.groupby(['snapnum','birthTag']).Mgain.sum()
-# mass_by_relation = mass_by_relation.reset_index()
-
-# fig, ax = plt.subplots(1,1, figsize=(9,6))
-# sns.lineplot(data=mass_by_relation, x='snapnum', y='Mgain', hue='birthTag', ax=ax)
-# plt.title("Wind material accumulation history for gas particles in a galaxy")
-
-# Historical locations of ISM gas of a galaxy in the current snapshot.
-
-from pdb import set_trace
-def show_1():
-    snap.load_gas_particles(['PId','Tmax'])
-    df = pd.merge(act.gptable, snap.gp, left_on='PId', right_on='PId')
-    
-    mass_by_relation = df.groupby(['snapnum','relation']).Mass.sum()
-    mass_by_relation = mass_by_relation.reset_index()
-    mtot = mass_by_relation.groupby('snapnum').Mass.sum()
-    mtot = pd.DataFrame({'Mass':mtot, 'relation':'TOT'}).reset_index()
-    mass_by_relation = pd.concat([mass_by_relation, mtot], axis=0)
-    # ci = 95 as default
-    sns.lineplot(data=mass_by_relation, hue='relation', x='snapnum', y='Mass', legend='brief')
-
-    # Hot particles only
-    df = df[df.Tmax > 5.5]
-    mass_by_relation = df.groupby(['snapnum','relation']).Mass.sum()
-    mass_by_relation = mass_by_relation.reset_index()
-    mtot = mass_by_relation.groupby('snapnum').Mass.sum()
-    mtot = pd.DataFrame({'Mass':mtot, 'relation':'TOT'}).reset_index()
-    mass_by_relation = pd.concat([mass_by_relation, mtot], axis=0)
-    # ci = 95 as default
-    sns.lineplot(data=mass_by_relation, hue='relation', x='snapnum', y='Mass', linestyle='--', legend=None)
-
-    plt.title("Historical locations of gas in a massive galaxy at z=0")
-
-
-if(__mode__ == "__show__"):
-    show_1()
-    plt.axvline(78, linestyle="--", color='k')
-    plt.axvline(58, linestyle=":", color='k')
-    # plt.savefig(DIRS['FIGURE']+"tmp.pdf")
-    plt.show()
-    # plt.close()
 
