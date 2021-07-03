@@ -71,6 +71,9 @@ class LinePlot():
         if(add_legend):
             self.legend_model.add_line(name, lc, lw, ls)
 
+    def draw():
+        pass
+
 ax=None
 line = LinePlot(ax)
 line.load_config()

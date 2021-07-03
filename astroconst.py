@@ -2,7 +2,7 @@ __all__ = ['pc', 'ac']
 
 from numpy import exp, log, pi
 
-class pc():
+class PhysicalConstants():
     '''
     Physcial Constants in c.g.s unit.
     '''
@@ -22,7 +22,7 @@ class pc():
         self.sigmat = 6.6524e-25 # Thompson scattering cross section
         self.km = 1.e5
 
-class ac():
+class AstroConstants():
     '''
     Astronomical Constants in c.g.s units.
     '''
@@ -38,6 +38,6 @@ class ac():
         self.gyr = self.yr * 1.e9
         self.rhobar = 3.*(100.e5 / self.mpc)**2 / (8.*pi*pc.G)
 
-pc=pc()
-ac=ac()
+pc = PhysicalConstants()
+ac = AstroConstants()
 

@@ -11,7 +11,7 @@
 
 * Introduction
 
-PyGIZMO is a light-weight module that provides convenient APIs to cosmological hydrodynamical simulation outputs from the [[http://www.tapir.caltech.edu/~phopkins/Site/GIZMO.html][GIZMO]] code.
+PyGIZMO is a light-weight software that provides convenient APIs to cosmological hydrodynamical simulation outputs from the [[http://www.tapir.caltech.edu/~phopkins/Site/GIZMO.html][GIZMO]] code.
 
 The main components of PyGIZMO include a data warehouse implementation, several high-level modules for scientic analysis and modules for data visualization.
 
@@ -21,6 +21,7 @@ In addition, PyGIZMO implements several high-level functionalities such as gener
 
 Finally, PyGIZMO provides many plotting modules that enable quick inspection of the simulation data as well as making complicated figures for journal publications.
 
+Future Works: Implement a set of APIs that interact with simulation data and /specexbin/, a C program for generating mock quasar absorption line spectra. Add modules that analyze the output spectra, e.g., fit line profiles to different ions in the spectra and obtain their physical properties such as column density, equivalent width, etc.
 
 * Quick Start
 
@@ -30,23 +31,23 @@ PyGIZMO is built and tested with the following libraries:
 
 #+CAPTION[Lists]: Pre-requisites
 + Python 3.x
-+ numpy-
-+ scipy-
-+ pandas-
++ numpy
++ scipy
++ pandas
 + h5py
 + matplotlib
 + seaborn
 + pyspark
 + tqdm (progress bar animation)
 
-** Installation
+** TODO Installation
 #+BEGIN_SRC shell
 git clone http://
 cd 
 sudo python setup.py install
 #+END_SRC
 
-** Examples
+** TODO Examples
 
 This *jupyter notebook* demonstrates several basic and advanced user cases of the program.
 
@@ -96,33 +97,258 @@ The current module implements the following classes:
 
 ** MultiFrame: An easy interactive tool that manages figure layouts
 
-lazy computation.
+The MultiFrame class defines the general layout of a figure through a set of parameters and APIs. One could always call the sketch() method to checkout the current layout of the figure, and then fine tune the parameters iteratively before adding data to the figure.
 
-Legend: Easily customizing multiple legends to MultiFrame
-ColorBar: (TODO) Easily customizing multiple colorbars to MultiFrame
+Once the layouts are finalized, one can call the draw() method, which returns ~fig~ and ~axs~.
+
+PlotLib provides two additional classes can be used to easily customize figure legends and colorbars:
+  + Legend: Easily customizing multiple legends to MultiFrame
+  + ColorBar: (TODO) Easily customizing multiple colorbars to MultiFrame
+
+Here is demo for several user cases:
+#+BEGIN_SRC python
+I. 2 x 2, tight layout, identical panels
+
+   +-------+-------+
+   |       |       |
+ y |       |       |
+   |       |       |
+   +-------+-------+
+   |       |       |
+ y |       |       |
+   |       |       |
+   +-------+-------+
+       x       x
+
+>>> frm = FrameMulti(2,2,tight_layout=True)
+>>> frm.set_xlabels('x', which='row')
+>>> frm.set_ylabels('y', which='col')
+
+II. 2 x 2, independent panels
+
+   +-------+    +-------+
+   |       |    |       |
+ y |       |  y |       |
+   |       |    |       |
+   +-------+    +-------+
+       x            x
+   +-------+    +-------+
+   |       |    |       |
+ y |       |  y |       |
+   |       |    |       |
+   +-------+    +-------+
+       x            x
+
+>>> frm = FrameMulti(2,2,tight_layout=False)
+>>> frm.set_param('hspace', 0.25)
+>>> frm.set_xlabels('x')
+>>> frm.set_ylabels('y') # which = 'all' by default
+>>> frm.sketch()
+
+III. Main and side panels
+
+    +-------+---+
+    |       |   |
+ y1 |       |   |
+    |       |   |
+    +-------+---+
+ y2 |       | x
+    +-------+
+        x
+
+>>> frm = FrameMulti(2,2)
+>>> frm._params.height_ratios = [4, 1]
+>>> frm._params.width_ratios = [4, 1]
+>>> frm.set_xlabels('x', which=[(1,0),(0,1)])
+>>> frm.set_ylabels('y1', which=(0,0))
+>>> frm.set_ylabels('y2', which=(1,0))
+>>> frm.axisON[3] = False
+>>> frm.sketch()
+
+IV. (2) x 3 panels
+
+    +-------+-------+-------+
+    |       |       |       |
+ y1 |       |       |       |
+    |       |       |       |
+    |       |       |       |
+    +-------+-------+-------+
+ y2 |       |       |       |
+    +-------+-------+-------+
+       x        x       x
+
+>>> frm = FrameMulti(2,3,tight_layout=True)
+>>> frm._params.height_ratios = [4, 1]
+>>> frm.set_xlabels('x', which='bottom')
+>>> frm.set_ylabels('y1', which=(0,0))
+>>> frm.set_ylabels('y2', which=(1,0))
+>>> frm.sketch()
+
+V. 2 x 2, tight layout with legends
+
+   +-------+-------+ 111
+   |       |       | 111
+ y |       |       |
+   |       |       |
+   +-------+-------+
+   |    333|       |
+ y |       |       |
+   |       |       | 2222
+   +-------+-------+ 2222
+       x       x
+
+>>> frm = FrameMulti(2,2, True)
+>>> frm.set_xlabels('xlabel')
+>>> frm.set_ylabels('ylabel')
+
+>>> lgd1 = Legend()
+>>> lgd1.add_line("lgd1:black line")
+>>> frm.add_legend(lgd1, which="upper right", loc="upper right")
+
+>>> lgd2 = Legend()
+>>> lgd2.add_patch("lgd2:red patch", fc='red')
+>>> frm.add_legend(lgd2, which="lower right", loc="lower right")
+
+>>> lgd3 = Legend()
+>>> lgd3.add_line("lgd3:thick blue dashed line", "blue", "--", 2)
+>>> frm.add_legend(lgd3, which="lower left", loc="upper right")
+
+>>> frm.set_param('right', 0.80)
+>>> frm.sketch()
+#+END_SRC
 
 ** LinePlot: Interface for line-type plot.
 
-** PhaseDiagram: Customizing multi-layer phase diagrams
+LinePlot provides a unified interface for making line-type plot that includes data from various sources (both models/simulations and observational/experimental data) in a single panel. A popular user case is to compare the GSMFs from many simulations to observational data in a same plot.
+
+It relies on two external files as input:
++ A configuration file (e.g., "lineplot.cfg") that defines the default panel-level attributes (e.g., the x/y limits, labels, tick formats, fontsizes) of different types of plots.
++ A tabular file that defines the color/style schema for various models. The same schema could be used for various types of plots for consistency. Here is an example table:
+
+#+Name: models.dat
+| model       | color | style | size | label     |
+|-------------+-------+-------+------+-----------|
+| l25n288-mfm | red   | -     |    2 | MFM-Hres  |
+| l25n144-mfm | red   | --    |    1 | MFM-Lres  |
+| l25n288-sph | blue  | -     |    2 | SPH-Hres  |
+| l25n144-sph | blue  | --    |    1 | SPH-Lres  |
+| baldry12    | black | o     |   12 | Baldry+12 |
+
+Here are some of the advantages of using LinePlot
++ Maintain a consistent color/linestyle schema for each model through a report/paper.
++ Easily build and reload template layouts for various types of plots.
+
+Currently several types (most common ones in extragalactic astronomy) of plots have implemented this interface:
++ LinePlotGSMF: Galactic stellar mass functions
++ LinePlotSMHM: Stellar mass - halo mass functions
++ LinePlotMZR: Mass-metallicity relations
 
 ** Map2D: Customizing multi-layer 2D maps for simulations
 
+Map2D is an interface for two-dimensional maps (z = f(x, y)). Most common instance is a density map (2D histogram).
 
+Currently two classes of figures have implemented Map2D:
+
+*** DensityMap: Draw density field for a snapshot
+
+The base layer shows the mass density or temperature distribution of snapshot. The region to display can be a slice from the simulation and at a user defined resolution level. 
+
+A few additional layers can be added to the base layer.
++ Galactic halos :: By default, galactic halos within a given mass range can be displayed as circles whose sizes correspond to the physical radius of the halos.
++ Particles :: A layer of selected particles. Often we overplot wind particles on top of the density map to show the prevalence of galactic winds in a snapshot.
++ (TODO) Contour of different ions (e.g., HI, OVI) :: Note that different ions are sensitive to different physical conditions such as density, temperature and metallicity and therefore trace different structures.
+
+*** PhaseDiagram: Customizing multi-layer phase diagrams
+
+
+
+The mass distribution of gas particles in the density-temperature space.
+
+Like in a DensityMap, PhaseDiagram allows a particle layer and a ion contour layer.
 
 ** Halo3D: Generating 3D particle layouts for galactic halos
 
+Draw an overall view of the configuration of various types of particles in a selected halo, and two additional views that zoom in on the center of the halo.
+
+One can make a movie (*sample*) showing the evolution of the halo over time by identifying and showing its progenitors in previous snapshots.
 
 * Galaxy and Halo Properties
 
-diagnostic statistics and analytics 
+The ~Analysis~ classes provides functions that compute key diagnostic statistics and analytics for galaxy and halo properties, such as the galactic stellar mass functions (~Gsmf~), stellar mass - halo mass functions (~Smhm~), mass metallicity relation (~Mzr~), halo gas components (~HaloGasComponents~) and halo radial profiles (~RadialProfile~). The results are often saved as permanent tables in designated locations that can be used by the plotting modules for making scientific figures.
 
+** Example: Galactic stellar mass function at multiple redshifts
+
+The following script generates the galactic stellar mass functions at four redshifts from a simulation, saves the result to the work-dir and compares the results with observational data.
+
+Galactic stellar mass function at z = 0,1,2,4
+#+BEGIN_SRC python
+from simulation import Simulation
+from analysis import Gsmf
+from plotlib import FrameMulti
+from plotlib.lineplot import LinePlot, LinePlotGSMF
+
+# load the simulation
+sim = simulation.Simulation("l25n144-test")
+
+# Generate the GSMFs at four redshifts
+gsmf = Gsmf(sim)
+redshifts = [0.0, 1.0, 2.0, 4.0]
+gsmfs.compute(z=redshifts, overwrite=True)
+
+# Make plot
+frm = FrameMulti(2, 2, tight_layout=True) # 2 x 2 share-xy
+frm.set_xlabels('$\log(M_{gal}/M_\odot)$', loc='bottom')
+frm.set_ylabels('$\Phi(M)dMdz$', loc='left')
+frm.set_xticks([10.0, 10.5, 11.0, 11.5, 12.0])
+frm.set_yticks([-4., -3., -2., -1., 0.0])
+frm.draw()
+
+for i, z in enumerate(redshifts):
+  lines = LinePlotGSMF(ax=axs[i], models="models.dat")
+  lines.add_model('l25n144-test', z=z)
+  lines.draw()
+#+END_SRC
+
+To compare the results with other simulations and observational data, replace the last section with (with a input file like [[models.dat][this one]]):
+#+BEGIN_SRC python
+models = ['l25n144-test', 'l25n288-test', 'l25n144-final', 'l25n288-final']
+observations = ['baldry12', 'tomczak14', 'tomczak14', 'song16']
+
+for i, z in enumerate(redshifts):
+  lines = LinePlotGSMF(ax=axs[i], models="models.dat")
+  for model in models:
+    lines.add_model(model, z=z)
+  lines.add_data(observations[i])
+  lines.draw()
+#+END_SRC
+
+** Design notes: derived tables and log files
+
+Since some of the computations for derived properties of galaxy and halo properties can be expensive, PyGIZMO automatically saves the results into tabular files at designated locations and keep tracks of any expensive operation that has already been performed on a simulation basis. These results can then be loaded into other modules without having to be re-computed.
+
+PyGIZMO implements this idea using two classes, /DerivedTable/ and /SimLog/, for each simulation/model. Whenever a DerivedTable has been computed and saved, an entry is written into the SimLog with detailed information on how the table was generated (e.g., the parameters that was passed to the ~DerivedTable.build_table() method~). At any time when a particular result is needed, ~DerivedTable.load_table()~ will check the SimLog to see if the table has already been created with the same parameters. If so, unless the keyword overwrite is set to True, the existing result will be loaded. 
+
+The DerivedTable has two sub-classes, PermanentTable and TemporaryTable. The permanent tables are often results that are deterministic and often used, such as the galactic stellar mass functions, merger trees, and the many simulation-level inputs to the [[sec:accretionTracker][accretion tracking engine]]. The temporary tables often have limited usage, are intermediate outputs of a long data pipeline, or depend on user defined parameters.
 
 * Merger Trees
 <<sec:mergertree>>
 ** Halo Merger Trees
-*** Implementation
+Halo merger trees define the relation between two halos at different time. In a simulation, a halo is uniquely determined by a pair Halo(haloId, snapnum), where haloId is the ID of the halo at a particular snapshot (snapnum). 
+
+A halo merger tree reconstructs the assembly history of any halo from a snapshot, locating its main /progenitor/ in all previous snapshots since its formation and defines the relations between all halos at a snapshot to the progenitor at the same snapshot.
+
+The merger trees and the related properties are managed with the ProgTracker class in ~progen.py~.
+
+*** Algorithm
+First of all, in each snapshot, one finds the host halo for any halo in the snapshot. The center of a halo must reside within the virial radius of its host halo, which is more massive. The result is saved in a PermanentTable named hostmap.
+
+The main progenitor of any halo in an earlier time is defined as the halo that contains most of its dark matter particles at that snapshot. Since the halo finder only identifies strucutres over a certain mass as halos, the progenitor is not guaranteed to be found if it has not assembled enough mass to be classified as a halo.
+
+A halo from an earlier time is said to be /captured/ by another halo, if most of its mass ends up in a satellite halo of the main descendent of that halo.
 
 ** Galaxy Merger Trees
+
+
 *** Implementation
 
 *Output*
@@ -172,7 +398,7 @@ Example:
 snap i, mainId j: [[initId1], [InitId2], [InitIdj]]
 
 *Relation between two galaxies at different time*
-WANT TO FIND THE DIRECT DESCENDENT OF G0 AT T1
+Task: Find the direct descendent of g0 at a later time t1.
 
 Galaxy g0: (snapnum=t0, galId=0)
 Galaxy g1: (snapnum=t1>t0, galId=1)
@@ -223,6 +449,7 @@ I can use dark matter to trace halos.
 
 
 * Accretion Tracking Engine
+
 <<sec:accretionTracker>>
 
 Analyzing the history of gas accretion into a galaxy is critical to understanding galaxy formation and evolution. The accretion tracking engine in PyGIZMO reconstructs the history of selected gas particles from a wide range of simulation outputs and classifies their accretion events into several categories that are physically motivated. The engine tracks selected gas particles across previous snapshots and analyzes their interactions with the galactic halos and wind particles over time.
@@ -233,27 +460,27 @@ The accretion.AccretionTracker class provides most of the public APIs for tracki
 
 This following example creates a pandas DataFrame that tracks the accretion histories for all gas particles in the interstellar medium of a galaxy at z = 0.
 #+BEGIN_SRC python
->>> from snapshot import Snapshot
->>> from accretion import AccretionTracker
+from snapshot import Snapshot
+from accretion import AccretionTracker
 
 # Create an instance of the AccretionTracker from a snapshot (z=0)
->>> model = "l25n144-test"    
->>> snap = snapshot.Snapshot(model, 108)
->>> act = AccretionTracker.from_snapshot(snap)
+model = "l25n144-test"    
+snap = snapshot.Snapshot(model, 108)
+act = AccretionTracker.from_snapshot(snap)
 
 # Prepare all required permanent tables. Load if already existed, otherwise build new.
->>> act.initialize()
+act.initialize()
 
 # Build temporary tables for selected particles from a galaxy specified by galIdTarget. Will take a while if the tables have not yet generated.
->>> act.build_temporary_tables_for_galaxy(galIdTarget)
+act.build_temporary_tables_for_galaxy(galIdTarget)
 
 # Run the engine and generate result
->>> mwtable = act.compute_wind_mass_partition_by_birthtag()
+mwtable = act.compute_wind_mass_partition_by_birthtag()
 #+END_SRC
 
 The resulted table can be used to answer many questions. For example, to find the total amount of wind recycling divided into the different categories:
 #+BEGIN_SRC python
->>> mwtable.groupby('birthTag')['Mgain'].sum()
+mwtable.groupby('birthTag')['Mgain'].sum()
 #+END_SRC 
 
 
@@ -478,8 +705,10 @@ For each snapshot:
 5. Accumulate over time for each gas particle.
 
 
-* Scalable Data Pipelines with Apache Spark
+* Quasar Absorption Line Spectra
+Future work.
 
+* TODO Scalable Data Pipelines with Apache Spark
 
 
 * References
