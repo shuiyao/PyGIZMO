@@ -117,412 +117,416 @@ class AccretionTracker():
         self._snap.load_progtable()
         self._simulation.build_splittable()
 
-    def load_gptable(self, galIdTarget, verbose='talky'):
-        fname = "gptable_{:03d}_{:05d}.parquet".format(self.snapnum, galIdTarget)
-        path_gptable = os.path.join(self.path_base, fname)
-        if(os.path.exists(path_gptable)):
-            talk("Loading gptable from file.", 'quiet')
-            gptable = pd.read_parquet(path_gptable)
-            self.gptable = gptable
-            return True
-        else:
-            talk("gptable {} not found. Use build_gptable() to build new table.".format(fname), verbose)
-            return False
+    # def load_gptable(self, galIdTarget, verbose='talky'):
+    #     fname = "gptable_{:03d}_{:05d}.parquet".format(self.snapnum, galIdTarget)
+    #     path_gptable = os.path.join(self.path_base, fname)
+    #     if(os.path.exists(path_gptable)):
+    #         talk("Loading gptable from file.", 'quiet')
+    #         gptable = pd.read_parquet(path_gptable)
+    #         self.gptable = gptable
+    #         return True
+    #     else:
+    #         talk("gptable {} not found. Use build_gptable() to build new table.".format(fname), verbose)
+    #         return False
 
-    def build_gptable(self, pidlist, snapstart=0, include_stars=False, rebuild=False):
-        '''
-        Build the gptable for the particles to track. The particles are 
-        specified by their particle IDs in the pidlist.
+    # def build_gptable(self, pidlist, snapstart=0, include_stars=False, rebuild=False):
+    #     '''
+    #     Build the gptable for the particles to track. The particles are 
+    #     specified by their particle IDs in the pidlist.
         
-        Parameters
-        ----------
-        pidlist: list.
-            List of particle IDs for which to build the table
-        snapstart: int. Default = 0
-            The first snapshot to start tracing the particles.
-        include_stars: boolean. Default = False.
-            If True, track the history star particles along with gas particles.
-        rebuild: boolean. Default=False
-            If True, rebuild the table even if a file exists.
-        '''
+    #     Parameters
+    #     ----------
+    #     pidlist: list.
+    #         List of particle IDs for which to build the table
+    #     snapstart: int. Default = 0
+    #         The first snapshot to start tracing the particles.
+    #     include_stars: boolean. Default = False.
+    #         If True, track the history star particles along with gas particles.
+    #     rebuild: boolean. Default=False
+    #         If True, rebuild the table even if a file exists.
+    #     '''
 
-        snaplast = self.snapnum
+    #     snaplast = self.snapnum
         
-        fname = "gptable_{:03d}_{:05d}.parquet".format(self.snapnum, galIdTarget)
-        path_gptable = os.path.join(self.path_base, fname)
+    #     fname = "gptable_{:03d}_{:05d}.parquet".format(self.snapnum, galIdTarget)
+    #     path_gptable = os.path.join(self.path_base, fname)
 
-        if(rebuild==False and os.path.exists(path_gptable)):
-            talk("Load existing gptable.", 'normal')
-            gptable = pd.read_parquet(path_gptable)
-            self.gptable = gptable
-            return gptable
+    #     if(rebuild==False and os.path.exists(path_gptable)):
+    #         talk("Load existing gptable.", 'normal')
+    #         gptable = pd.read_parquet(path_gptable)
+    #         self.gptable = gptable
+    #         return gptable
 
-        talk("Building gptable for {} gas particles".format(len(pidlist)), 'normal')
-        gptable = None
-        for snapnum in tqdm(range(snapstart, snaplast+1), desc='snapnum', ascii=True):
-            snap = snapshot.Snapshot(model, snapnum, verbose='talky')
-            snap.load_gas_particles(['PId','Mass','haloId'])
+    #     talk("Building gptable for {} gas particles".format(len(pidlist)), 'normal')
+    #     gptable = None
+    #     for snapnum in tqdm(range(snapstart, snaplast+1), desc='snapnum', ascii=True):
+    #         snap = snapshot.Snapshot(self.model, snapnum, verbose='talky')
+    #         snap.load_gas_particles(['PId','Mass','haloId'])
 
-            # From pidlist infer all PIds needed from this snapshot
-            # From the ancestor table, find the smallest snapnext that is larger than the current snapnum. For example, the history of particle Id=8 being:
-            # PId   4   4   6   6   6   6   6   6   6   8   8   8
-            # Gen   2   2   1   1   1   1   1   1   1   0   0   0
-            # Mass  m/4 m/4 m/2 m/2 m/2 m/2 m/2 m/2 m/2 m   m   m
-            #               s1              cur         s2
-            # At current time, we found the next splitting at s2, where:
-            # PId=8, parentId=6, snapnext=s2
-            parents = self._ancestors.query('snapnext > @snapnum').reset_index()
-            parents = parents.loc[parents.groupby('PId').gen.idxmax()].reset_index()
-            pidtosearch = set(pidlist + list(parents.parentId.drop_duplicates()))
+    #         # From pidlist infer all PIds needed from this snapshot
+    #         # From the ancestor table, find the smallest snapnext that is larger than the current snapnum. For example, the history of particle Id=8 being:
+    #         # PId   4   4   6   6   6   6   6   6   6   8   8   8
+    #         # Gen   2   2   1   1   1   1   1   1   1   0   0   0
+    #         # Mass  m/4 m/4 m/2 m/2 m/2 m/2 m/2 m/2 m/2 m   m   m
+    #         #               s1              cur         s2
+    #         # At current time, we found the next splitting at s2, where:
+    #         # PId=8, parentId=6, snapnext=s2
+    #         parents = self._ancestors.query('snapnext > @snapnum').reset_index()
+    #         parents = parents.loc[parents.groupby('PId').gen.idxmax()].reset_index()
+    #         pidtosearch = set(pidlist + list(parents.parentId.drop_duplicates()))
             
-            gp = snap.gp.loc[snap.gp.PId.isin(pidtosearch), :]
-            gp.loc[:,'snapnum'] = snapnum
+    #         gp = snap.gp.loc[snap.gp.PId.isin(pidtosearch), :]
+    #         gp.loc[:,'snapnum'] = snapnum
 
-            # Replace the ancestors' PIds at the current snapshot with the PIds of the descendents (when there are multiple descendents, make a copy for each descendent, INCLUDING itself (PId == parentId, but the particle has splitted)).
-            # Might be multiple instances parentId -> multiple PId
-            gp_parents = pd.merge(gp, parents[['PId', 'parentId', 'gen']],
-                                  left_on='PId', right_on='parentId',
-                                  suffixes=("_l", None))
-            # Should reduce particle Mass according to its generation
-            gp_parents.Mass = gp_parents.Mass / (2.0 ** gp_parents.gen)
-            # gp_parents.drop(['PId_l', 'parentId', 'gen'], axis=1, inplace=True)
-            gp_parents.drop(['PId_l', 'parentId'], axis=1, inplace=True)
-            gp = gp[gp.PId.isin(pidlist)]
-            gp = gp[~gp.PId.isin(gp_parents.PId)]
+    #         # Replace the ancestors' PIds at the current snapshot with the PIds of the descendents (when there are multiple descendents, make a copy for each descendent, INCLUDING itself (PId == parentId, but the particle has splitted)).
+    #         # Might be multiple instances parentId -> multiple PId
+    #         gp_parents = pd.merge(gp, parents[['PId', 'parentId', 'gen']],
+    #                               left_on='PId', right_on='parentId',
+    #                               suffixes=("_l", None))
+    #         # Should reduce particle Mass according to its generation
+    #         gp_parents.Mass = gp_parents.Mass / (2.0 ** gp_parents.gen)
+    #         # gp_parents.drop(['PId_l', 'parentId', 'gen'], axis=1, inplace=True)
+    #         gp_parents.drop(['PId_l', 'parentId'], axis=1, inplace=True)
+    #         gp = gp[gp.PId.isin(pidlist)]
+    #         gp = gp[~gp.PId.isin(gp_parents.PId)]
 
-            if(include_stars):
-                snap.load_star_particles(['PId','Mass','haloId'])
-                # Early time, no star particle
-                if(snap.sp is not None):
-                    sp = snap.sp.loc[snap.sp.PId.isin(pidlist), :]
-                    if(not sp.empty):
-                        sp.loc[:,'snapnum'] = snapnum
-                        gp = pd.concat([gp, sp])
+    #         if(include_stars):
+    #             snap.load_star_particles(['PId','Mass','haloId'])
+    #             # Early time, no star particle
+    #             if(snap.sp is not None):
+    #                 sp = snap.sp.loc[snap.sp.PId.isin(pidlist), :]
+    #                 if(not sp.empty):
+    #                     sp.loc[:,'snapnum'] = snapnum
+    #                     gp = pd.concat([gp, sp])
 
-            # The star particles and 'virgin' gas particle has gen=0.
-            gp['gen'] = 0
+    #         # The star particles and 'virgin' gas particle has gen=0.
+    #         gp['gen'] = 0
 
-            # Add those particles that have been a parent
-            gp = pd.concat([gp, gp_parents])
+    #         # Add those particles that have been a parent
+    #         gp = pd.concat([gp, gp_parents])
 
-            # Attach to the main table
-            gptable = gp.copy() if gptable is None else pd.concat([gptable, gp])
+    #         # Attach to the main table
+    #         gptable = gp.copy() if gptable is None else pd.concat([gptable, gp])
 
-        gptable = gptable.set_index('PId').sort_values('snapnum')
-        self.gptable = gptable
-        return gptable
+    #     gptable = gptable.set_index('PId').sort_values('snapnum')
+    #     self.gptable = gptable
+    #     return gptable
 
-    def save_gptable(self, galIdTarget):
-        fname = "gptable_{:03d}_{:05d}.parquet".format(self.snapnum, galIdTarget)
-        path_gptable = os.path.join(self.path_base, fname)
-        talk("Saving gptable as {}".format(path_gptable), 'quiet')
+    # def save_gptable(self, galIdTarget):
+    #     fname = "gptable_{:03d}_{:05d}.parquet".format(self.snapnum, galIdTarget)
+    #     path_gptable = os.path.join(self.path_base, fname)
+    #     talk("Saving gptable as {}".format(path_gptable), 'quiet')
 
-        schema = utils.pyarrow_read_schema(schema_gptable)
-        tab = pa.Table.from_pandas(self.gptable, schema=schema, preserve_index=True)
-        pq.write_table(tab, path_gptable)
+    #     schema = utils.pyarrow_read_schema(schema_gptable)
+    #     tab = pa.Table.from_pandas(self.gptable, schema=schema, preserve_index=True)
+    #     pq.write_table(tab, path_gptable)
 
-    def load_pptable(self, galIdTarget, verbose='talky'):
-        fname = "pptable_{:03d}_{:05d}.parquet".format(self.snapnum, galIdTarget)
-        path_pptable = os.path.join(self.path_base, fname)
-        if(os.path.exists(path_pptable)):
-            talk("Loading pptable from file.", 'quiet')
-            pptable = pd.read_parquet(path_pptable)
-            self.pptable = pptable
-            return True
-        else:
-            talk("pptable {} not found. Use build_pptable() to build new table.".format(fname), verbose)
-            return False
+    # def load_pptable(self, galIdTarget, verbose='talky'):
+    #     fname = "pptable_{:03d}_{:05d}.parquet".format(self.snapnum, galIdTarget)
+    #     path_pptable = os.path.join(self.path_base, fname)
+    #     if(os.path.exists(path_pptable)):
+    #         talk("Loading pptable from file.", 'quiet')
+    #         pptable = pd.read_parquet(path_pptable)
+    #         self.pptable = pptable
+    #         return True
+    #     else:
+    #         talk("pptable {} not found. Use build_pptable() to build new table.".format(fname), verbose)
+    #         return False
 
-    def build_pptable(self, inittable, phewtable, gptable=None, rebuild=False):
-        '''
-        Build or load a temporary table that stores all the necessary attributes 
-        of selected PhEW particles that can be queried by the accretion tracking 
-        engine.
+    # def build_pptable(self, inittable, phewtable, gptable=None, rebuild=False):
+    #     '''
+    #     Build or load a temporary table that stores all the necessary attributes 
+    #     of selected PhEW particles that can be queried by the accretion tracking 
+    #     engine.
 
-        Parameters
-        ----------
-        inittable: pandas.DataFrame or Spark DataFrame
-            Columns: PId*, snapfirst, minit, birthId, snaplast, mlast
-            The initial/final status of all PhEW particles
-            Needed to know from which halo a PhEW particles were born
-            Created from Simulation.build_inittable_from_simulation()
-        phewtable: pandas.DataFrame or Spark DataFrame
-            Columns: PId*, snapnum, Mass, haloId, (Mloss)
-            All PhEW particles in any snapshot of the simulation
-            The function return is a subset of it
-            Created from Simulation.build_phewtable_from_simulation()
-        gptable: pandas.DataFrame or Spark DataFrame. Default=None
-            Columns: PId*, snapnum, Mass, haloId, ...
-            Gas particles whose histories we are tracking.
-            Needed to find the list of halos for processing
-            If None, try self.gptable
-        rebuild: boolean. Default=False
-            If True, rebuild the table even if a file exists.
+    #     Parameters
+    #     ----------
+    #     inittable: pandas.DataFrame or Spark DataFrame
+    #         Columns: PId*, snapfirst, minit, birthId, snaplast, mlast
+    #         The initial/final status of all PhEW particles
+    #         Needed to know from which halo a PhEW particles were born
+    #         Created from Simulation.build_inittable_from_simulation()
+    #     phewtable: pandas.DataFrame or Spark DataFrame
+    #         Columns: PId*, snapnum, Mass, haloId, (Mloss)
+    #         All PhEW particles in any snapshot of the simulation
+    #         The function return is a subset of it
+    #         Created from Simulation.build_phewtable_from_simulation()
+    #     gptable: pandas.DataFrame or Spark DataFrame. Default=None
+    #         Columns: PId*, snapnum, Mass, haloId, ...
+    #         Gas particles whose histories we are tracking.
+    #         Needed to find the list of halos for processing
+    #         If None, try self.gptable
+    #     rebuild: boolean. Default=False
+    #         If True, rebuild the table even if a file exists.
 
-        Returns
-        -------
-        pptable: pandas.DataFrame or Spark DataFrame
-            Columns: PId*, snapnum, haloId, Mloss, birthId
-            Temporary table storing all the necessary attributes of selected PhEW
-            particles that can be queried by the accretion tracking engine.
-        '''
+    #     Returns
+    #     -------
+    #     pptable: pandas.DataFrame or Spark DataFrame
+    #         Columns: PId*, snapnum, haloId, Mloss, birthId
+    #         Temporary table storing all the necessary attributes of selected PhEW
+    #         particles that can be queried by the accretion tracking engine.
+    #     '''
         
-        path_pptable = os.path.join(self.path_base, "pptable.parquet")
-        if(rebuild==False and os.path.exists(path_pptable)):
-            talk("Load existing pptable.", 'normal')
-            pptable = pd.read_parquet(path_pptable)
-            self.pptable = pptable
-            return pptable
+    #     path_pptable = os.path.join(self.path_base, "pptable.parquet")
+    #     if(rebuild==False and os.path.exists(path_pptable)):
+    #         talk("Load existing pptable.", 'normal')
+    #         pptable = pd.read_parquet(path_pptable)
+    #         self.pptable = pptable
+    #         return pptable
 
-        if(gptable is None):
-            gptable = self.gptable
+    #     if(gptable is None):
+    #         gptable = self.gptable
 
-        assert('Mloss' in phewtable.columns), "'Mloss' field not found in phewtable."
+    #     assert('Mloss' in phewtable.columns), "'Mloss' field not found in phewtable."
 
-        # Find all halos that ever hosted the gas particles in gptable
-        halos = AccretionTracker.compile_halos_to_process(gptable)
+    #     # Find all halos that ever hosted the gas particles in gptable
+    #     halos = AccretionTracker.compile_halos_to_process(gptable)
 
-        # Find all PhEW particles that ever appeared in these halos
-        pptable = pd.merge(halos, phewtable, how='inner',
-                           left_on=['snapnum', 'haloId'],
-                           right_on=['snapnum', 'haloId'])
-        # pptable: snapnum, haloId, PId, Mloss
+    #     # Find all PhEW particles that ever appeared in these halos
+    #     pptable = pd.merge(halos, phewtable, how='inner',
+    #                        left_on=['snapnum', 'haloId'],
+    #                        right_on=['snapnum', 'haloId'])
+    #     # pptable: snapnum, haloId, PId, Mloss
 
-        # Add the birth halo information to pptable
-        pptable = pd.merge(pptable, inittable[['PId','snapfirst','birthId']],
-                           how='left', left_on='PId', right_on='PId')
+    #     # Add the birth halo information to pptable
+    #     pptable = pd.merge(pptable, inittable[['PId','snapfirst','birthId']],
+    #                        how='left', left_on='PId', right_on='PId')
 
-        self.pptable = pptable
-        return pptable
+    #     self.pptable = pptable
+    #     return pptable
 
-    def save_pptable(self, galIdTarget):
-        fname = "pptable_{:03d}_{:05d}.parquet".format(self.snapnum, galIdTarget)
-        path_pptable = os.path.join(self.path_base, fname)
-        talk("Saving pptable as {}".format(path_pptable), 'quiet')
+    # def save_pptable(self, galIdTarget):
+    #     fname = "pptable_{:03d}_{:05d}.parquet".format(self.snapnum, galIdTarget)
+    #     path_pptable = os.path.join(self.path_base, fname)
+    #     talk("Saving pptable as {}".format(path_pptable), 'quiet')
 
-        schema = utils.pyarrow_read_schema(schema_pptable)
-        tab = pa.Table.from_pandas(self.pptable, schema=schema, preserve_index=True)
-        pq.write_table(tab, path_pptable)
+    #     schema = utils.pyarrow_read_schema(schema_pptable)
+    #     tab = pa.Table.from_pandas(self.pptable, schema=schema, preserve_index=True)
+    #     pq.write_table(tab, path_pptable)
 
-    @staticmethod
-    def _find_particle_ancestors(splittable, pidlist):
-        '''
-        In case there is splitting, we need to find all the ancestors of a 
-        gas particle in order to figure out where its wind material came from 
-        before it spawned from its parent.
-        Furthermore, we also need to find all the split events for any of the 
-        parents.
+    # @staticmethod
+    # def _find_particle_ancestors(splittable, pidlist):
+    #     '''
+    #     In case there is splitting, we need to find all the ancestors of a 
+    #     gas particle in order to figure out where its wind material came from 
+    #     before it spawned from its parent.
+    #     Furthermore, we also need to find all the split events for any of the 
+    #     parents.
 
-        Returns
-        -------
-        ancestors: pandas.DataFrame
-            Columns: PId, parentId, snapnext, gen
-        '''
+    #     Returns
+    #     -------
+    #     ancestors: pandas.DataFrame
+    #         Columns: PId, parentId, snapnext, gen
+    #     '''
 
-        # Find the maximum generation of a particle when it was created/spawned
-        maxgen = splittable.groupby('parentId')['parentGen'].max().to_dict()
+    #     # Find the maximum generation of a particle when it was created/spawned
+    #     maxgen = splittable.groupby('parentId')['parentGen'].max().to_dict()
         
-        df = splittable.loc[splittable.PId.isin(pidlist),
-                            ['PId','parentId','Mass','snapnext','parentGen']]
+    #     df = splittable.loc[splittable.PId.isin(pidlist),
+    #                         ['PId','parentId','Mass','snapnext','parentGen']]
 
-        # At the time when the PId was spawned
-        df['gen'] = df['PId'].map(maxgen).fillna(0).astype('int32') + 1
-        df_next = df.copy()
-        i, max_iter = 0, 10
-        # Find the parent of parent until no more
-        while(i < max_iter):
-            i = i + 1
-            # Does the parent have a grandparent? (not self).
-            # [<PId>, parentId*] -> [PId*, parentId]
-            df_next = pd.merge(df_next[['PId', 'parentId', 'gen', 'parentGen']],
-                               splittable,
-                               how='inner', left_on='parentId', right_on='PId',
-                               suffixes=("_l", None))
-            # If no more ancestors found, break the loop
-            if(df_next.empty):
-                break
-            # How many generations have passed between the time when the parent
-            # was spawned and the time it spawns the PId?
-            df_next['gen'] = df_next.gen \
-                + df_next['parentId_l'].map(maxgen).fillna(0).astype('int32') \
-                - df_next['parentGen_l'] + 1
-            df_next.drop(['parentId_l','parentGen_l','atime','PId'], axis=1, inplace=True)
-            df_next.rename(columns={'PId_l':'PId'}, inplace=True)
-            df = pd.concat([df, df_next], axis=0)
-        if(i == max_iter):
-            warnings.warn("Maximum iterations {} reached.".format(max_iter))
+    #     # At the time when the PId was spawned
+    #     df['gen'] = df['PId'].map(maxgen).fillna(0).astype('int32') + 1
+    #     df_next = df.copy()
+    #     i, max_iter = 0, 10
+    #     # Find the parent of parent until no more
+    #     while(i < max_iter):
+    #         i = i + 1
+    #         # Does the parent have a grandparent? (not self).
+    #         # [<PId>, parentId*] -> [PId*, parentId]
+    #         df_next = pd.merge(df_next[['PId', 'parentId', 'gen', 'parentGen']],
+    #                            splittable,
+    #                            how='inner', left_on='parentId', right_on='PId',
+    #                            suffixes=("_l", None))
+    #         # If no more ancestors found, break the loop
+    #         if(df_next.empty):
+    #             break
+    #         # How many generations have passed between the time when the parent
+    #         # was spawned and the time it spawns the PId?
+    #         df_next['gen'] = df_next.gen \
+    #             + df_next['parentId_l'].map(maxgen).fillna(0).astype('int32') \
+    #             - df_next['parentGen_l'] + 1
+    #         df_next.drop(['parentId_l','parentGen_l','atime','PId'], axis=1, inplace=True)
+    #         df_next.rename(columns={'PId_l':'PId'}, inplace=True)
+    #         df = pd.concat([df, df_next], axis=0)
+    #     if(i == max_iter):
+    #         warnings.warn("Maximum iterations {} reached.".format(max_iter))
 
-        # Self-splitting
-        df_self = splittable.loc[splittable.parentId.isin(pidlist+list(df.parentId)),
-                                 ['parentId','Mass','snapnext','parentGen']]
-        # Does the parent have previous self-splitting?
-        df_tmp = pd.merge(df[['PId','parentId','gen','parentGen']],
-                          df_self[['parentId','parentGen','Mass','snapnext']],
-                          how='inner', on='parentId',
-                          suffixes=(None, "_r"))
-        df_tmp = df_tmp.query('parentGen_r > parentGen')
-        df_tmp['gen'] = df_tmp.gen \
-            + df_tmp['parentGen_r'] - df_tmp['parentGen']
-        df_tmp.drop(['parentGen_r'], axis=1, inplace=True)
+    #     # Self-splitting
+    #     df_self = splittable.loc[splittable.parentId.isin(pidlist+list(df.parentId)),
+    #                              ['parentId','Mass','snapnext','parentGen']]
+    #     # Does the parent have previous self-splitting?
+    #     df_tmp = pd.merge(df[['PId','parentId','gen','parentGen']],
+    #                       df_self[['parentId','parentGen','Mass','snapnext']],
+    #                       how='inner', on='parentId',
+    #                       suffixes=(None, "_r"))
+    #     df_tmp = df_tmp.query('parentGen_r > parentGen')
+    #     df_tmp['gen'] = df_tmp.gen \
+    #         + df_tmp['parentGen_r'] - df_tmp['parentGen']
+    #     df_tmp.drop(['parentGen_r'], axis=1, inplace=True)
             
-        df_self['gen'] = df_self['parentGen']
-        df_self['PId'] = df_self['parentId']
+    #     df_self['gen'] = df_self['parentGen']
+    #     df_self['PId'] = df_self['parentId']
 
-        # df_self contains particles out of the pidlist
+    #     # df_self contains particles out of the pidlist
 
-        df = pd.concat([df, df_tmp, df_self], axis=0)
-        # Sanity Check:
-        # grp = df.groupby('PId')
-        # grp.gen.count() - grp.gen.max() should be all 0
-        return df[df.PId.isin(pidlist)]
+    #     df = pd.concat([df, df_tmp, df_self], axis=0)
+    #     # Sanity Check:
+    #     # grp = df.groupby('PId')
+    #     # grp.gen.count() - grp.gen.max() should be all 0
+    #     return df[df.PId.isin(pidlist)]
 
-    @staticmethod
-    def define_halo_relationship(progId, progHost, haloId, hostId):
-        if(progId == 0): return "IGM"
-        if(progId == haloId): return "SELF"
-        if(progHost == haloId): return "PARENT"
-        if(progId == hostId): return "SAT"
-        if(progHost == hostId): return "SIB"
-        return "IGM"
+    # Move to progen.py
+    # @staticmethod
+    # def define_halo_relationship(progId, progHost, haloId, hostId):
+    #     if(progId == 0): return "IGM"
+    #     if(progId == haloId): return "SELF"
+    #     if(progHost == haloId): return "PARENT"
+    #     if(progId == hostId): return "SAT"
+    #     if(progHost == hostId): return "SIB"
+    #     return "IGM"
 
-    @staticmethod
-    def assign_relations_to_halos(haloIdTarget, halos, progtable, hostmap):
-        '''
-        Map from the unique halo identifier (snapnum, haloId) to a descriptor for 
-        its relationship with another halo (haloIdTarget) at a later time.
-        In the accretion tracking engine, the table is built iteratively for each 
-        halo of interest.
+    # Move to derivedtables
+    # @staticmethod
+    # def assign_relations_to_halos(haloIdTarget, halos, progtable, hostmap):
+    #     '''
+    #     Map from the unique halo identifier (snapnum, haloId) to a descriptor for 
+    #     its relationship with another halo (haloIdTarget) at a later time.
+    #     In the accretion tracking engine, the table is built iteratively for each 
+    #     halo of interest.
 
-        Parameters
-        ----------
-        haloIdTarget: int.
-            The haloId of the halo in the current snapshot.
-        halos: pandas.DataFrame
-            Columns: haloId*, snapnum*
-            Halos uniquely identified with the (haloId, snapnum) pair
-        progtable: pandas.DataFrame.
-            Columns: haloId*, snapnum, progId, hostId, logMvir, logMsub
-            Output of progen.find_all_previous_progenitors().
-            Defines the progenitors of any halo in any previous snapshot.
-        hostmap: pandas.DataFrame.
-            Columns: snapnum*, haloId*, hostId
-            Output of progen.build_haloId_hostId_map()
-            Mapping between haloId and hostId for each snapshot.
+    #     Parameters
+    #     ----------
+    #     haloIdTarget: int.
+    #         The haloId of the halo in the current snapshot.
+    #     halos: pandas.DataFrame
+    #         Columns: haloId*, snapnum*
+    #         Halos uniquely identified with the (haloId, snapnum) pair
+    #     progtable: pandas.DataFrame.
+    #         Columns: haloId*, snapnum, progId, hostId, logMvir, logMsub
+    #         Output of progen.find_all_previous_progenitors().
+    #         Defines the progenitors of any halo in any previous snapshot.
+    #     hostmap: pandas.DataFrame.
+    #         Columns: snapnum*, haloId*, hostId
+    #         Output of progen.build_haloId_hostId_map()
+    #         Mapping between haloId and hostId for each snapshot.
 
-        Returns:
-        relation: pandas.DataFrame
-            Columns: snapnum*, haloId*, relation
-            Map between a halo (MultiIndex(snapnum, haloId)) to the relation, which 
-            defines its relation to another halo (haloIdTarget) at a later time.
-        '''
+    #     Returns:
+    #     relation: pandas.DataFrame
+    #         Columns: snapnum*, haloId*, relation
+    #         Map between a halo (MultiIndex(snapnum, haloId)) to the relation, which 
+    #         defines its relation to another halo (haloIdTarget) at a later time.
+    #     '''
 
-        progsTarget = progtable.loc[progtable.index == haloIdTarget,
-                                    ['snapnum', 'progId', 'hostId']]
-        progsTarget.rename(columns={'hostId':'progHost'}, inplace=True)
+    #     progsTarget = progtable.loc[progtable.index == haloIdTarget,
+    #                                 ['snapnum', 'progId', 'hostId']]
+    #     progsTarget.rename(columns={'hostId':'progHost'}, inplace=True)
 
-        halos = halos[['snapnum', 'haloId']].set_index(['snapnum', 'haloId'])
+    #     halos = halos[['snapnum', 'haloId']].set_index(['snapnum', 'haloId'])
 
-        # Find the hostId of each halo in its snapshot
-        halos = halos.join(hostmap, how='left') # (snapnum, haloId) -> hostId
-        halos = halos.reset_index()
+    #     # Find the hostId of each halo in its snapshot
+    #     halos = halos.join(hostmap, how='left') # (snapnum, haloId) -> hostId
+    #     halos = halos.reset_index()
 
-        halos = pd.merge(halos, progsTarget, how='left',
-                         left_on = 'snapnum', right_on = 'snapnum')
-        halos['relation'] = halos.apply(
-            lambda x : AccretionTracker.define_halo_relationship(
-            x.progId, x.progHost, x.haloId, x.hostId), axis=1
-        )
+    #     halos = pd.merge(halos, progsTarget, how='left',
+    #                      left_on = 'snapnum', right_on = 'snapnum')
+    #     halos['relation'] = halos.apply(
+    #         lambda x : AccretionTracker.define_halo_relationship(
+    #         x.progId, x.progHost, x.haloId, x.hostId), axis=1
+    #     )
 
-        return halos[['snapnum','haloId','relation']].set_index(['snapnum', 'haloId'])
+    #     return halos[['snapnum','haloId','relation']].set_index(['snapnum', 'haloId'])
 
-    @staticmethod
-    def add_relation_field_to_gptable(haloIdTarget, gptable, progtable, hostmap):
-        '''
-        Add a field ('relation') in the gptable that defines the relation between 
-        haloIdTarget and any halo that hosts a gas particle in the gptable.
+    # @staticmethod
+    # def add_relation_field_to_gptable(haloIdTarget, gptable, progtable, hostmap):
+    #     '''
+    #     Add a field ('relation') in the gptable that defines the relation between 
+    #     haloIdTarget and any halo that hosts a gas particle in the gptable.
 
-        Parameters
-        ----------
-        haloIdTarget: int.
-            The haloId of the halo in the current snapshot.
-        gptable: pandas.DataFrame or Spark DataFrame
-        progtable: pandas.DataFrame.
-            Columns: haloId*, snapnum, progId, hostId, logMvir, logMsub
-            Output of progen.find_all_previous_progenitors().
-            Defines the progenitors of any halo in any previous snapshot.
-        hostmap: pandas.DataFrame.
-            Columns: snapnum*, haloId*, hostId
-            Output of progen.build_haloId_hostId_map()
-            Mapping between haloId and hostId for each snapshot.
+    #     Parameters
+    #     ----------
+    #     haloIdTarget: int.
+    #         The haloId of the halo in the current snapshot.
+    #     gptable: pandas.DataFrame or Spark DataFrame
+    #     progtable: pandas.DataFrame.
+    #         Columns: haloId*, snapnum, progId, hostId, logMvir, logMsub
+    #         Output of progen.find_all_previous_progenitors().
+    #         Defines the progenitors of any halo in any previous snapshot.
+    #     hostmap: pandas.DataFrame.
+    #         Columns: snapnum*, haloId*, hostId
+    #         Output of progen.build_haloId_hostId_map()
+    #         Mapping between haloId and hostId for each snapshot.
 
-        Returns:
-        gptable: pandas.DataFrame
-        '''
+    #     Returns:
+    #     gptable: pandas.DataFrame
+    #     '''
 
-        halos = AccretionTracker.compile_halos_to_process(gptable, ['snapnum','haloId'])
-        halos = AccretionTracker.assign_relations_to_halos(haloIdTarget, halos, progtable, hostmap)
-        gptable = pd.merge(gptable, halos, how='left',
-                           left_on=['snapnum','haloId'], right_index=True)
-        gptable['relation'] = gptable['relation'].fillna('IGM')
-        return gptable
+    #     halos = AccretionTracker.compile_halos_to_process(gptable, ['snapnum','haloId'])
+    #     halos = AccretionTracker.assign_relations_to_halos(haloIdTarget, halos, progtable, hostmap)
+    #     gptable = pd.merge(gptable, halos, how='left',
+    #                        left_on=['snapnum','haloId'], right_index=True)
+    #     gptable['relation'] = gptable['relation'].fillna('IGM')
+    #     return gptable
 
-    @staticmethod
-    def add_birthtag_field_to_pptable(haloIdTarget, pptable, progtable, hostmap):
-        '''
-        Add a field ('birthTag') in the pptable that defines the relation between 
-        haloIdTarget and the halo where a PhEW particle was born.
+    # @staticmethod
+    # def add_birthtag_field_to_pptable(haloIdTarget, pptable, progtable, hostmap):
+    #     '''
+    #     Add a field ('birthTag') in the pptable that defines the relation between 
+    #     haloIdTarget and the halo where a PhEW particle was born.
 
-        Parameters
-        ----------
-        haloIdTarget: int.
-            The haloId of the halo in the current snapshot.
-        pptable: pandas.DataFrame or Spark DataFrame
-            Columns: PId*, snapnum, Mass, haloId, snapfirst, birthId
-            PhEW particles that shared mass with the gas particles
-        progtable: pandas.DataFrame.
-            Columns: haloId*, snapnum, progId, hostId, logMvir, logMsub
-            Output of progen.find_all_previous_progenitors().
-            Defines the progenitors of any halo in any previous snapshot.
-        hostmap: pandas.DataFrame.
-            Columns: snapnum*, haloId*, hostId
-            Output of progen.build_haloId_hostId_map()
-            Mapping between haloId and hostId for each snapshot.
+    #     Parameters
+    #     ----------
+    #     haloIdTarget: int.
+    #         The haloId of the halo in the current snapshot.
+    #     pptable: pandas.DataFrame or Spark DataFrame
+    #         Columns: PId*, snapnum, Mass, haloId, snapfirst, birthId
+    #         PhEW particles that shared mass with the gas particles
+    #     progtable: pandas.DataFrame.
+    #         Columns: haloId*, snapnum, progId, hostId, logMvir, logMsub
+    #         Output of progen.find_all_previous_progenitors().
+    #         Defines the progenitors of any halo in any previous snapshot.
+    #     hostmap: pandas.DataFrame.
+    #         Columns: snapnum*, haloId*, hostId
+    #         Output of progen.build_haloId_hostId_map()
+    #         Mapping between haloId and hostId for each snapshot.
 
-        Returns:
-        pptable: pandas.DataFrame
-        '''
+    #     Returns:
+    #     pptable: pandas.DataFrame
+    #     '''
 
-        halos = AccretionTracker.compile_halos_to_process(pptable, ['snapfirst','birthId'])
-        halos = AccretionTracker.assign_relations_to_halos(haloIdTarget, halos, progtable, hostmap)
-        pptable = pd.merge(pptable, halos, how='left',
-                           left_on=['snapfirst','birthId'], right_index=True)
-        pptable.rename(columns={'relation':'birthTag'}, inplace=True)
-        return pptable
+    #     halos = AccretionTracker.compile_halos_to_process(pptable, ['snapfirst','birthId'])
+    #     halos = AccretionTracker.assign_relations_to_halos(haloIdTarget, halos, progtable, hostmap)
+    #     pptable = pd.merge(pptable, halos, how='left',
+    #                        left_on=['snapfirst','birthId'], right_index=True)
+    #     pptable.rename(columns={'relation':'birthTag'}, inplace=True)
+    #     return pptable
 
-    @staticmethod
-    def compile_halos_to_process(ptable, fields=['snapnum', 'haloId']):
-        halos = ptable.loc[:, fields]
-        halos.rename(columns={fields[0]:'snapnum', fields[1]:'haloId'}, inplace=True)
-        halos = halos[halos.haloId != 0].drop_duplicates()
-        return halos
+    # Move to DerivedTable
+    # @staticmethod
+    # def compile_halos_to_process(ptable, fields=['snapnum', 'haloId']):
+    #     halos = ptable.loc[:, fields]
+    #     halos.rename(columns={fields[0]:'snapnum', fields[1]:'haloId'}, inplace=True)
+    #     halos = halos[halos.haloId != 0].drop_duplicates()
+    #     return halos
 
-    @staticmethod
-    def compute_mgain_partition_by_pId(gptable, spark=None):
-        '''
-        For each gas particle in the gptable, compute its mass gain since last
-        snapshot. This does not account for splitting particles yet. 
-        '''
-        if('Mgain' in gptable.columns):
-            talk("Mgain is already found in gptable", "talky")
-            return gptable
-        if(spark is None):
-            # This is a very expensive operation
-            gptable = gptable.reset_index()
-            gptable['Mgain'] = gptable.groupby(gptable.PId).Mass.diff().fillna(0.0)
-            return gptable
-        else:
-            w = Window.partitionBy(gp.PId).orderBy(gp.snapnum)
-            return gptable.withColumn('Mgain', gptable.Mass - sF.lag('Mass',1).over(w)).na.fill(0.0)
+    # Move to GasPartTable
+    # @staticmethod
+    # def compute_mgain_partition_by_pId(gptable, spark=None):
+    #     '''
+    #     For each gas particle in the gptable, compute its mass gain since last
+    #     snapshot. This does not account for splitting particles yet. 
+    #     '''
+    #     if('Mgain' in gptable.columns):
+    #         talk("Mgain is already found in gptable", "talky")
+    #         return gptable
+    #     if(spark is None):
+    #         # This is a very expensive operation
+    #         gptable = gptable.reset_index()
+    #         gptable['Mgain'] = gptable.groupby(gptable.PId).Mass.diff().fillna(0.0)
+    #         return gptable
+    #     else:
+    #         w = Window.partitionBy(gp.PId).orderBy(gp.snapnum)
+    #         return gptable.withColumn('Mgain', gptable.Mass - sF.lag('Mass',1).over(w)).na.fill(0.0)
 
     @staticmethod
     def update_mgain_for_split_events(gptable, splittable):
@@ -692,9 +696,7 @@ class AccretionTracker():
         Find the amount of mass gained in a normal gas particle (PId) between the 
         previous snapshot (snapnum-1) and the current snapshot (snapnum)
         '''
-        # TODO: What if the gas particle gets accreted?
-        # TODO: What if the gas particle gets splitted?
-        # TODO: What if the gas particle hasn't appeared in the previous snapshot?
+
         if(snapnum == 0): return 0.0
         mass_this = gptable.query('snapnum==@snapnum AND PId==@PId').Mass
         mass_last = gptable.query('snapnum==@snapnum-1 AND PId==@PId').Mass

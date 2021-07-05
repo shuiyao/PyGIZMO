@@ -3,6 +3,80 @@ __all__ = ["compute_halo_gas_components", "radial_profile", "wind_fraction", "ge
 from astroconst import pc, ac
 from config import cfg
 import pandas as pd
+from simulation import Simulation
+from snapshot import Snapshot
+
+import abc
+
+class SimAnalysis(abc.ABC):
+    def __init__(self, model):
+        self._model = model
+        self._sim = Simulation(model)
+
+    def compute(self, z, overwrite=False):
+        '''
+        Compute the DerivedTable(s) z(s).
+
+        Parameters
+        ----------
+        z: float or list.
+            The redshift at which to generate the GSMF.
+        '''
+        if(isinstance(z, float)):
+            z = [z]
+        for redz in z:
+            tab = self._get_table_at_z(redz)
+            tab.build_table(overwrite=overwrite)
+            
+    def load(self, z):
+        '''
+        Load the DerivedTable at a redshift z.
+        '''
+        tab = self._get_table_at_z(z)
+        return tab.load_table()
+
+    @abc.abstractmethod
+    def _get_table_at_z(z):
+        pass
+
+    @property
+    def model(self):
+        return self._model
+
+
+class Gsmf(SimAnalysis):
+    def __init__(self, model):
+        super(Gsmf, self).__init__(model)
+
+    def _get_table_at_z(z):
+        snapnum = self._sim.find_snapnum(z, 'closest')
+        snap = Snapshot(self._model, snapnum)
+        return GsmfTable(snap)
+
+class Smhm(SimAnalysis):
+    def __init__(self, model):
+        super(Smhm, self).__init__()
+
+    def _get_table_at_z(z):
+        snapnum = self._sim.find_snapnum(z, 'closest')
+        snap = Snapshot(self._model, snapnum)
+        return SmhmTable(snap)
+
+class Mzr(SimAnalysis):
+    def __init__(self, model):
+        super(Mzr, self).__init__()
+
+    def _get_table_at_z(z):
+        snapnum = self._sim.find_snapnum(z, 'closest')
+        snap = Snapshot(self._model, snapnum)
+        return GalaxyAttributes(snap)
+
+    def load(z):
+        tab = self._get_table_at_z(z)
+        df = tab.load_table()
+        return df[['logMstar', 'Zgal']]
+
+
 
 def compute_halo_gas_components(snap, Tcut=None):
     '''

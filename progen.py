@@ -3,9 +3,6 @@ Procedures related to finding the progenitors of galactic halos in previous
 snapshots.
 '''
 
-__all__ = ['find_all_previous_progenitors', 'find_progenitors',
-           'build_haloId_hostId_map', 'get_relationship_between_halos']
-
 import snapshot
 from utils import talk
 import galaxy
@@ -23,194 +20,169 @@ schema_progtable = {'columns':['haloId','snapnum','progId','hostId','logMvir','l
                               'Npart':'int32'}
 }
 
-def find_all_previous_progenitors(snap, overwrite=False, load_halo_mass=True):
-    '''
-    Find the progenitors for all halos within a snapshot in all previous 
-    snapshots.
+class ProgTracker():
 
-    Parameters
-    ----------
-    snap: class Snapshot.
-    overwrite: boolean. Default=False.
-        If False, first try to see if a table already exists. Create a new 
-        table if not.
-        If True, create a new table and overwrite the old one if needed.
-    load_halo_mass: boolean. Default=True
-        If True. Load logMvir and logMsub for each progenitor.
-    
-    Returns
-    -------
-    progtable: pandas DataFrame.
-        A pandas table storing information for the progenitors of halos at
-        different time.
-        columns: haloId*, snapnum, progId, hostId, logMvir, logMsub
-    
-    Examples
-    --------
-    >>> snap = snapshot.Snapshot('l12n144-phew', 100)
-    >>> progtable = find_all_previous_progenitors(snap, overwrite=True)
+    @staticmethod
+    def build_haloId_hostId_map(simulation, overwrite=False):
+        '''
+        Build maps between haloId and hostId for each snapshot before the snapshot
+        parsed in the arguments.
 
-    '''
+        Parameter
+        ---------
+        simulation: class Simulation
 
-    fout = os.path.join(snap._path_workdir, "progens_{:03d}.csv".format(snap.snapnum))
-    schema = schema_progtable
-    if(load_halo_mass == False):
-        schema['columns'].remove('logMvir')
-        schema['columns'].remove('logMsub')
-        schema['columns'].append('Npart')        
-    if(os.path.exists(fout) and overwrite == False):
-        talk("Read existing progenitor file: {}".format(fout), 'normal')
-        return pd.read_csv(fout, skiprows=1,
-                           names=schema['columns'],
-                           dtype=schema['dtypes']).set_index('haloId')
+        Returns
+        -------
+        hostmap: pandas.DataFrame
+            Columns: snapnum*, haloId*, hostId
+        '''
+        fout = os.path.join(simulation._path_workdir, "hostmap.csv")
+        if(os.path.exists(fout) and overwrite == False):
+            talk("Read existing hostmap file: {}".format(fout), 'normal')
+            hostmap = pd.read_csv(fout, header=0)
+            return hostmap.set_index(['snapnum', 'haloId'])
 
-    talk("Finding progenitors for halos in snapshot_{:03d}" .format(snap.snapnum), 'normal')
-    progtable = None
-    for snapnum in tqdm(range(0, snap.snapnum+1), desc='snapnum', ascii=True):
-        snapcur = snapshot.Snapshot(snap.model, snapnum)
-        if(load_halo_mass):
-            snapcur.load_halos(['Mvir', 'Msub'])
-        else:
-            snapcur.load_halos(['Npart'])            
-        haloId2hostId = galaxy.read_sopar(snapcur._path_sopar, as_dict=True)
-        haloId2progId = find_progenitors(snap, snapcur)
-        haloId2hostId[0] = 0
-        df = pd.DataFrame(index=haloId2progId.keys())
-        df['snapnum'] = snapnum
-        df['progId'] = df.index.map(haloId2progId)
-        df['hostId'] = df.progId.map(haloId2hostId)
-        df = pd.merge(df, snapcur.halos, how='left', left_on='progId', right_index=True)
-        progtable = df.copy() if (progtable is None) else pd.concat([progtable, df])
-    progtable.index.rename('haloId', inplace=True)
-    if(load_halo_mass == False):
-        progtable.Npart = progtable.Npart.fillna(0).astype('int')
-    progtable.reset_index().to_csv(fout, index=False,
-                                   columns=schema['columns'])
-    return progtable
+        frames = []
+        for snapnum in range(0, simulation.nsnaps):
+            snapcur = snapshot.Snapshot(simulation.model, snapnum)
+            haloId2hostId = galaxy.read_sopar(snapcur._path_sopar, as_dict=True)
+            # haloId2hostId may be empty when no galaxy existed
+            df = pd.DataFrame({'snapnum':snapnum,
+                               'haloId':haloId2hostId.keys(),
+                               'hostId':haloId2hostId.values()})
+            frames.append(df)
+        hostmap = pd.concat(frames, axis=0).set_index(['snapnum', 'haloId'])
+        hostmap.to_csv(fout)
+        return hostmap
 
-def find_progenitors(snap, snap_early):
-    '''
-    For each halo from a snapshot, find its main progenitor in some early 
-    snapshot. The main progenitor of a halo is defined as the halo that hosts 
-    a majority of its current dark matter particles.
+    @staticmethod
+    def get_relationship_between_halos(haloIdTarget, haloId, snapnum, progtable, hostmap):
+        '''
+        Get the relationship between the progenitor of any halo from a snapshot and 
+        another halo in the same snapshot as the progenitor. 
 
-    Algorithm:
-    1. Select dark particles that was found in a halo in both the early and the current snapshot (hostId > 0)
-    2. Find the total number of dark particles, in any hostId that was from progId
-    3. Pick the progId with max(count) as the progenitor of hostId
+        Parameters
+        ----------
+        haloIdTarget: int.
+            The haloId of the halo in the current snapshot.
+        haloId: int
+            The haloId of the target halo at an earlier time.
+        snapnum: int
+            The corresponding snapnum of the snapshot target halo.
+        progtable: pandas DataFrame.
+            Columns: haloId*, snapnum, progId, hostId, logMvir, logMsub
+            Output of find_all_previous_progenitors().
+            Defines the progenitors of any halo in any previous snapshot.
+        hostmap: dict.
+            Output of build_haloId_hostId_map()
+            Mapping between haloId and hostId for each snapshot.
 
-    Parameters
-    ----------
-    snap: class Snapshot.
-    snap_early: class Snapshot.
-        A snapshot at some earlier time in which the progenitors are found.
+        Returns
+        -------
+        relation: str
+            One of ['SELF', 'PARENT', 'SAT', 'SIB', 'IGM']
+            Interpreted as: haloIdTarget at snapnum is the [relation] of the 
+            progenitor of haloId at that snapshot.
 
-    Returns
-    -------
-    haloId2progId: dict.
-        A temporary mapping from snap.haloId to snap_early.progId.
-        Note: not all haloId will find a progenitor.
-    '''
+        Example
+        -------
+        >>> snap = snapshot.Snapshot('l12n144-phew', 100)
+        >>> hostmap = build_haloId_hostId_map(snap)
+        >>> progtable = find_all_previous_progenitors(snap)
+        >>> get_relationship_between_halos(10, 30, 50, progtable, hostmap)
+        '''
 
-    assert(snap.snapnum >= snap_early.snapnum), "snap_early must be at an earlier time than snap."
-    if(snap.snapnum == snap_early.snapnum):
-        haloId2progId = {i:i for i in range(1, snap.ngals+1)}
-        return haloId2progId
-                
-    snap.load_dark_particles()
-    snap_early.load_dark_particles()
-    dp = snap.dp[snap.dp.haloId > 0].set_index('PId')
-    dpe = snap_early.dp[snap_early.dp.haloId > 0]\
-                    .set_index('PId')\
-                    .rename(columns={'haloId':'progId'})
-    # dpe could be empty if no galaxy has formed yet.
-    
-    dp = pd.merge(dp, dpe, how='inner', left_index=True, right_index=True)
-    grp = dp.reset_index().groupby(['haloId','progId']).count().reset_index()
-    idx = grp.groupby('haloId')['PId'].transform(max) == grp['PId']
-    haloId2progId = dict(zip(grp[idx].haloId, grp[idx].progId))
+        prog = progtable.loc[haloIdTarget].query('snapnum==@snapnum')
+        if(prog.empty): return "IGM"
+        if(int(prog.progId) == haloId): return "SELF"
+        if(int(prog.hostId) == haloId): return "PARENT"
+        hostIdTarget = hostmap[snapnum][haloId]
+        if(int(prog.progId) == hostId): return "SAT"
+        if(int(prog.hostId) == hostId): return "SIB"
+        return "IGM"
 
-    # If no progenitor is found, set progId to 0
-    for i in range(1, snap.ngals+1):
-        if(haloId2progId.get(i) is None):
-            haloId2progId[i] = 0
-    return haloId2progId
+    @staticmethod
+    def compile_halos_hosts(data, fields=['snapnum', 'haloId']):
+        '''
+        Find all unique halos (snapnum, haloId) from a table.
 
-def build_haloId_hostId_map(simulation, overwrite=False):
-    '''
-    Build maps between haloId and hostId for each snapshot before the snapshot
-    parsed in the arguments.
+        Parameters
+        ----------
+        data: pandas.DataFrame.
+            A table, each entry of which maps to a halo.
+            It could be from a gptable or pptable, where each particle has been
+            assigned to a unique halo.
+        fields: []
+            The name of the fields that correspond to the snapnum and haloId in 
+            the input table.
+        '''
+        
+        halos = data.loc[:, fields]
+        halos.rename(columns={fields[0]:'snapnum', fields[1]:'haloId'}, inplace=True)
+        halos = halos[halos.haloId != 0].drop_duplicates()
+        return halos
 
-    Parameter
-    ---------
-    simulation: class Simulation
+    @staticmethod
+    def assign_relations_to_halos(haloIdTarget, halos, progtable, hostmap):
+        '''
+        Map from the unique halo identifier (snapnum, haloId) to a descriptor for 
+        its relationship with another halo (haloIdTarget) at a later time.
+        In the accretion tracking engine, the table is built iteratively for each 
+        halo of interest.
 
-    Returns
-    -------
-    hostmap: pandas.DataFrame
-        Columns: snapnum*, haloId*, hostId
-    '''
-    fout = os.path.join(simulation._path_workdir, "hostmap.csv")
-    if(os.path.exists(fout) and overwrite == False):
-        talk("Read existing hostmap file: {}".format(fout), 'normal')
-        hostmap = pd.read_csv(fout, header=0)
-        return hostmap.set_index(['snapnum', 'haloId'])
-    
-    frames = []
-    for snapnum in range(0, simulation.nsnaps):
-        snapcur = snapshot.Snapshot(simulation.model, snapnum)
-        haloId2hostId = galaxy.read_sopar(snapcur._path_sopar, as_dict=True)
-        # haloId2hostId may be empty when no galaxy existed
-        df = pd.DataFrame({'snapnum':snapnum,
-                           'haloId':haloId2hostId.keys(),
-                           'hostId':haloId2hostId.values()})
-        frames.append(df)
-    hostmap = pd.concat(frames, axis=0).set_index(['snapnum', 'haloId'])
-    hostmap.to_csv(fout)
-    return hostmap
+        Parameters
+        ----------
+        haloIdTarget: int.
+            The haloId of the halo in the current snapshot.
+        halos: pandas.DataFrame
+            Columns: haloId*, snapnum*
+            Halos uniquely identified with the (haloId, snapnum) pair
+        progtable: pandas.DataFrame.
+            Columns: haloId*, snapnum, progId, hostId, logMvir, logMsub
+            Output of progen.find_all_previous_progenitors().
+            Defines the progenitors of any halo in any previous snapshot.
+        hostmap: pandas.DataFrame.
+            Columns: snapnum*, haloId*, hostId
+            Output of progen.build_haloId_hostId_map()
+            Mapping between haloId and hostId for each snapshot.
 
-def get_relationship_between_halos(haloIdTarget, haloId, snapnum, progtable, hostmap):
-    '''
-    Get the relationship between the progenitor of any halo from a snapshot and 
-    another halo in the same snapshot as the progenitor. 
+        Returns:
+        relation: pandas.DataFrame
+            Columns: snapnum*, haloId*, relation
+            Map between a halo (MultiIndex(snapnum, haloId)) to the relation, which 
+            defines its relation to another halo (haloIdTarget) at a later time.
+        '''
 
-    Parameters
-    ----------
-    haloIdTarget: int.
-        The haloId of the halo in the current snapshot.
-    haloId: int
-        The haloId of the target halo at an earlier time.
-    snapnum: int
-        The corresponding snapnum of the snapshot target halo.
-    progtable: pandas DataFrame.
-        Columns: haloId*, snapnum, progId, hostId, logMvir, logMsub
-        Output of find_all_previous_progenitors().
-        Defines the progenitors of any halo in any previous snapshot.
-    hostmap: dict.
-        Output of build_haloId_hostId_map()
-        Mapping between haloId and hostId for each snapshot.
+        from progen import ProgTracker
 
-    Returns
-    -------
-    relation: str
-        One of ['SELF', 'PARENT', 'SAT', 'SIB', 'IGM']
-        Interpreted as: haloIdTarget at snapnum is the [relation] of the 
-        progenitor of haloId at that snapshot.
+        progsTarget = progtable.loc[progtable.index == self.haloId,
+                                    ['snapnum', 'progId', 'hostId']]
+        progsTarget.rename(columns={'hostId':'progHost'}, inplace=True)
 
-    Example
-    -------
-    >>> snap = snapshot.Snapshot('l12n144-phew', 100)
-    >>> hostmap = build_haloId_hostId_map(snap)
-    >>> progtable = find_all_previous_progenitors(snap)
-    >>> get_relationship_between_halos(10, 30, 50, progtable, hostmap)
-    '''
+        halos = halos[['snapnum', 'haloId']].set_index(['snapnum', 'haloId'])
 
-    prog = progtable.loc[haloIdTarget].query('snapnum==@snapnum')
-    if(prog.empty): return "IGM"
-    if(int(prog.progId) == haloId): return "SELF"
-    if(int(prog.hostId) == haloId): return "PARENT"
-    hostIdTarget = hostmap[snapnum][haloId]
-    if(int(prog.progId) == hostId): return "SAT"
-    if(int(prog.hostId) == hostId): return "SIB"
-    return "IGM"
+        # Find the hostId of each halo in its snapshot
+        halos = halos.join(hostmap, how='left') # (snapnum, haloId) -> hostId
+        halos = halos.reset_index()
+
+        halos = pd.merge(halos, progsTarget, how='left',
+                         left_on = 'snapnum', right_on = 'snapnum')
+
+        # Call ProgTracker
+        halos['relation'] = halos.apply(
+            lambda x : ProgTracker.define_halo_relationship(
+            x.progId, x.progHost, x.haloId, x.hostId), axis=1
+        )
+
+        return halos[['snapnum','haloId','relation']].set_index(['snapnum', 'haloId'])
+
+    @staticmethod
+    def define_halo_relationship(progId, progHost, haloId, hostId):
+        if(progId == 0): return "IGM"
+        if(progId == haloId): return "SELF"
+        if(progHost == haloId): return "PARENT"
+        if(progId == hostId): return "SAT"
+        if(progHost == hostId): return "SIB"
+        return "IGM"
 

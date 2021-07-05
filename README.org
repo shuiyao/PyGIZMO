@@ -17,7 +17,7 @@ The main components of PyGIZMO include a data warehouse implementation, several 
 
 PyGIZMO implements data pipelines that extract and transform simulation data from various sources with multiple formats into a coherent data warehouse that can be managed with a clean set of APIs. The simulation data includes the raw particle data from the simulation snapshots, galaxy catalogs generated from group finders, and record files that stores the run-time information of wind particles.
 
-In addition, PyGIZMO implements several high-level functionalities such as generating [[sec:mergertree][halo merger trees]] and [[sec:accretiontracker][tracking galactic accretion]] that involves some intensive computations and heavily relies on efficient data pipelining. In particular, PyGIZMO provides unique supports to analyzing the outputs from the [[https://arxiv.org/abs/2106.01511][PhEW]] (Physically Evolved Winds) model, which is a novel sub-grid model in the GIZMO simulations that analytically propagates wind particles in the galactic halo.
+In addition, PyGIZMO implements several high-level functionalities such as generating [[sec:mergertree][halo merger trees]] and [[sec:accretionTracker][tracking galactic accretion]] that involves some intensive computations and heavily relies on efficient data pipelining. In particular, PyGIZMO provides unique supports to analyzing the outputs from the [[https://arxiv.org/abs/2106.01511][PhEW]] (Physically Evolved Winds) model, which is a novel sub-grid model in the GIZMO simulations that analytically propagates wind particles in the galactic halo.
 
 Finally, PyGIZMO provides many plotting modules that enable quick inspection of the simulation data as well as making complicated figures for journal publications.
 
@@ -97,9 +97,9 @@ The current module implements the following classes:
 
 ** MultiFrame: An easy interactive tool that manages figure layouts
 
-The MultiFrame class defines the general layout of a figure through a set of parameters and APIs. One could always call the sketch() method to checkout the current layout of the figure, and then fine tune the parameters iteratively before adding data to the figure.
+The MultiFrame class defines the general layout of a figure through a set of parameters and APIs. One could always call the ~sketch()~ method to checkout the current layout of the figure, and then fine tune the parameters iteratively before adding data to the figure.
 
-Once the layouts are finalized, one can call the draw() method, which returns ~fig~ and ~axs~.
+Once the layouts are finalized, one can call the ~draw()~ method, which returns ~fig~ and ~axs~.
 
 PlotLib provides two additional classes can be used to easily customize figure legends and colorbars:
   + Legend: Easily customizing multiple legends to MultiFrame
@@ -287,11 +287,8 @@ from analysis import Gsmf
 from plotlib import FrameMulti
 from plotlib.lineplot import LinePlot, LinePlotGSMF
 
-# load the simulation
-sim = simulation.Simulation("l25n144-test")
-
 # Generate the GSMFs at four redshifts
-gsmf = Gsmf(sim)
+gsmf = Gsmf("l25n144-test")
 redshifts = [0.0, 1.0, 2.0, 4.0]
 gsmfs.compute(z=redshifts, overwrite=True)
 
@@ -345,6 +342,8 @@ First of all, in each snapshot, one finds the host halo for any halo in the snap
 The main progenitor of any halo in an earlier time is defined as the halo that contains most of its dark matter particles at that snapshot. Since the halo finder only identifies strucutres over a certain mass as halos, the progenitor is not guaranteed to be found if it has not assembled enough mass to be classified as a halo.
 
 A halo from an earlier time is said to be /captured/ by another halo, if most of its mass ends up in a satellite halo of the main descendent of that halo.
+
+*** TODO Example
 
 ** Galaxy Merger Trees
 
@@ -449,7 +448,6 @@ I can use dark matter to trace halos.
 
 
 * Accretion Tracking Engine
-
 <<sec:accretionTracker>>
 
 Analyzing the history of gas accretion into a galaxy is critical to understanding galaxy formation and evolution. The accretion tracking engine in PyGIZMO reconstructs the history of selected gas particles from a wide range of simulation outputs and classifies their accretion events into several categories that are physically motivated. The engine tracks selected gas particles across previous snapshots and analyzes their interactions with the galactic halos and wind particles over time.
@@ -505,19 +503,23 @@ More about tracking recycled materials: In a PhEW simulation, a normal gas parti
 
 PubSub
 
+
 *** Particle splitting
 <<sec:particleSplitting>>
+
 In later version of the PhEW, a gas particle splits into two halves when its mass grows to over 3 times its original mass. One of the newly spawned particle will inherit the particle ID while the other one will have a new unique ID. The simulation outputs each of the splitting event into a log files like "split.snapnum". The problem is, how to reconstruct the split history of any given gas particle from these files?
 
 <<def:generation>>
-Definition of /generation/: Tracing back in time and starting from 0, the /generation/ of the particle increases by 1 every time when it splitted in the past. If the particle was spawned at some earlier time from a parent, the /generation/ will keep increasing for the parent. 
+*Definition of /generation/*: Tracing back in time and starting from 0, the /generation/ of the particle increases by 1 every time when it splitted in the past. If the particle was spawned at some earlier time from a parent, the /generation/ will keep increasing for the parent. 
 
 The following example tracks the /generation/ of a particle with PId = 3, which was spawned from another particle with PId = 12, which was then spawned from PId = 15. The particle splitted at snapnum = 106 and snapnum = 103.
 
+#+BEGIN_SRC
 snapnum:     108 107 106 105 104 103 102 101 100 099 098
 ParticleID:  3   3   3   3   3   3   12  12  12  12  15 
 Split                X           X   X       X       X
 generation:  0   0   1   1   1   2   3   3   4   5   6
+#+END_SRC
 
 The particle was at generation = 6 at snapnum = 98. Therefore we assume that only 1/32 (2^-gen) of the mass of particle PId = 15 ended up in particle PId = 3 at snapnum = 108.
 
@@ -530,10 +532,12 @@ In each snapshot, ~AccretionTracker.build_gptable()~ loads all particles in the 
 
 At any time, one particle could be the parent of multiple particles from later time. In these cases, information of the parent particle is copied multiple times for each of its descendents. However, the generation number for these descendents may not be the same. For example, the following diagram demonstrates the history of particle(4):
 
+#+BEGIN_SRC 
 snapnum:     108 107 106 105 104 103 102 101 100 099 098
 ParticleID:  4   4   4   4   4   4   4   4   12  12  15 
 Split                                X       X       X
 generation:  0   0   0   0   0   0   1   1   2   2   3
+#+END_SRC
 
 In the end, the final /gptable/ should contain len(pidlist) unique PIds, each having one entry for each snapshot.
         
@@ -561,8 +565,8 @@ Notes:
 + Default paths are defined in the configuration file.
 
 *Permanent tables*
-1. The /phewtable/ parquet table (~Simulation.build_phewtable~)
-
+The /phewtable/ parquet table (~Simulation.build_phewtable~)
+#+CAPTION[Table]: phewtable
 | Field     | dtype   | Description                                 |
 |-----------+---------+---------------------------------------------|
 | PId*      | int64   | Unique particle ID of a wind(PhEW) particle |
@@ -574,8 +578,8 @@ Notes:
 
 It's a gigantic table that needs to be frequently queried. It contains the attributes, such as mass and haloId, of all PhEW particles in any snapshot. The Mloss field is derived for each particle (PId) over time. Assume at each snapshot, a total mass of Mloss was lost from the PhEW particle (PId) to the halo (haloId) where it was found at that snapshot.
 
-2. The /inittable/ CSV table (~Simulation.build_inittable()~)
-
+The /inittable/ CSV table (~Simulation.build_inittable()~)
+#+CAPTION[Table]: inittable
 | Field     | dtype   | Description                                   |
 |-----------+---------+-----------------------------------------------|
 | PId*      | int64   | Unique particle ID of a wind(PhEW) particle   |
@@ -587,8 +591,8 @@ It's a gigantic table that needs to be frequently queried. It contains the attri
 
 This table keeps records of all wind events in a simulation, such as when and where a wind particle was launched, the last time a wind particle appeared before fully evaporated, the mass of a wind particle at birth and death.
 
-3. The /progtable/ CSV table (~Snapshot.build_progtable()~)
-
+The /progtable/ CSV table (~Snapshot.build_progtable()~)
+#+CAPTION[Table]: progtable
 | Field   | dtype   | Description                               |
 |---------+---------+-------------------------------------------|
 | haloId* | int32   | Unique haloId in the single snapshot      |
@@ -600,12 +604,12 @@ This table keeps records of all wind events in a simulation, such as when and wh
 
 This table defines the prognitor of any halo from a snapshot in the previous snapshot. Recursively quering the table finds all previous progenitors of any given halo. We use this table to define the relation between any halo at a given snapshot and any halo in a previous snapshot, using ~progen.get_relationship_between_halos()~
 
-4. The /hostmap/ CSV table (~Simulation.build_hostmap()~)
+The /hostmap/ CSV table (~Simulation.build_hostmap()~)
 
 This maps (snapnum, haloId) to hostId, the host galaxy/halo of the haloId at snapnum.
 
-5. The /splittable/ CSV table (~Simulation.build_splittable()~)
-
+The /splittable/ CSV table (~Simulation.build_splittable()~)
+#+CAPTION[Table]: splittable
 | Field    | dtype   | Description                                 |
 |----------+---------+---------------------------------------------|
 | PId*     | int64   | Unique particle ID                          |
@@ -616,9 +620,10 @@ This maps (snapnum, haloId) to hostId, the host galaxy/halo of the haloId at sna
 | gen      | int32   | The generation at the current time          |
 
 *Temporary tables*
-1. The temporary /gptable/ Parquet table (~AccretionTracker.build_gptable()~)
+The temporary /gptable/ Parquet table (~AccretionTracker.build_gptable()~)
 
 #+Name: gptable
+#+CAPTION[Table]: gptable
 | Field   | dtype   | Description                                   |
 |---------+---------+-----------------------------------------------|
 | PId*    | int64   | Unique particle ID of a gas particle          |
@@ -641,6 +646,7 @@ The newly generated table is saved as ~gptable_{:03d}_{:05d}.parquet~, where ':0
 2. The temporary /pptable/ Parquet table (~AccretionTracker.build_pptable(inittable, phewtable)~)
 
 #+Name: pptable
+#+CAPTION[Table]: pptable
 | Field      | dtype   | Description                                 |
 |------------+---------+---------------------------------------------|
 | PId*       | int64   | Unique particle ID of a wind(PhEW) particle |
@@ -713,5 +719,7 @@ Future work.
 
 * References
 [[http://www.tapir.caltech.edu/~phopkins/Site/GIZMO.html][The GIZMO Simulation Code]]
+
 [[https://arxiv.org/abs/2005.13585][The Physically Evolved Winds (PhEW) Model, Journal Article, I. Model]]
+
 [[https://arxiv.org/abs/2106.01511][The Physically Evolved Winds (PhEW) Model, Journal Article, II. Implementation]]
