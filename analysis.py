@@ -1,7 +1,7 @@
 __all__ = ["compute_halo_gas_components", "radial_profile", "wind_fraction", "get_halo_metallicity", "derive_galaxy_properties"]
 
 from astroconst import pc, ac
-from config import cfg
+from config import SimConfig
 import pandas as pd
 from simulation import Simulation
 from snapshot import Snapshot
@@ -9,8 +9,9 @@ from snapshot import Snapshot
 import abc
 
 class SimAnalysis(abc.ABC):
-    def __init__(self, model):
+    def __init__(self, model, config=SimConfig()):
         self._model = model
+        self._cfg = config
         self._sim = Simulation(model)
 
     def compute(self, z, overwrite=False):
@@ -96,8 +97,10 @@ def compute_halo_gas_components(snap, Tcut=None):
         The mass within each baryon phase for all the halos.
         columns: logMsub, logMvir, Mcold, Mhot, Mism, Mstar
     '''
+
+    cfg = SimConfig()
     if(Tcut == None):
-        Tcut = float(cfg['Default']['logT_threshold'])
+        Tcut = float(cfg.get('Default','logT_threshold'))
 
     snap.load_gas_particles(['haloId','Mass','Sfr','logT'])
     snap.load_star_particles(['haloId','Mass'])

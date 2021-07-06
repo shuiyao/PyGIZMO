@@ -1,14 +1,7 @@
 import abc
 from datetime import datetime
-
-# gptable can not exist by itself.
-
-# Instead it must be attached to the opertor: AccretionTracker, which manage
-# all the resources (e.g., progtable, hostmap) and perform operations on these
-# tables.
-
-# build_table() needs parameters as well as other tables.
-# All these parameters and table paths needed to be recorded in the log file.
+from config import SimConfig
+import utils
 
 class ValidateRuleExisted():
     '''
@@ -110,6 +103,12 @@ class DerivedTable(abc.ABC):
     def set_param(self, key, value):
         self._pars[key] = value
 
+    @staticmethod
+    def load_schema(self, class_string):
+        schema = utils.load_default_schema(
+            SimConfig.get('Schema', 'derivedtables'))
+        return schema[class_string]
+
     @property
     def model(self):
         return self._model
@@ -177,6 +176,7 @@ class TemporaryTable(DerivedTable):
 
     def save_table(self):
         '''
+        TemporaryTable.save_table()
         Save the created/updated table and update log file.
         '''
 
@@ -290,21 +290,41 @@ class PermanentTable(DerivedTable):
 
         return validate_rule.validate(event, verbose)
 
-    def save_table(self):
+    def save_table(self, spark=None):
         '''
+        PermanentTable.save_table()
         Save the created/updated table and update log file.
+
+        Parameters
+        ----------
+        spark: SparkSession or None
+            if None, do not use spark.
         '''
 
         talk("Saving {} as {}".format(self.clsstr, self._path_table), 'quiet')
 
         if(self._pars.get('fformat') == "parquet"):
-            schema = utils.pyarrow_read_schema(self._schema)
-            tab = pa.Table.from_pandas(self.data.reset_index(), schema=schema,
-                                       preserve_index=False)
-            pq.write_table(tab, self._path_table)
+            if(spark is None):
+                schema_arrow = utils.pyarrow_read_schema(self._schema)
+                tab = pa.Table.from_pandas(self.data.reset_index(),
+                                           schema=schema_arrow,
+                                           preserve_index=False)
+                pq.write_table(tab, self._path_table)
+            else:
+                self.data.write.mode('overwrite').parquet(self._path_table)
+                
         elif(self._pars.get('fformat') == "csv"):
-            self.data.reset_index().to_csv(self._path_table, index=False,
-                                           columns=self._schema['columns'])
+            if(spark is None):
+                self.data.reset_index().to_csv(self._path_table, index=False,
+                                               columns=self._schema['columns'])
+            else:
+                self.data.write.mode('overwrite').csv(self._path_table)
+                
+        else:
+            raise ValueError("save_table() supports only csv and parquet format.")
+
+        if(spark is not None):
+            self.set_param('file_type', 'dir')
 
         self.update_log()
 
@@ -389,6 +409,7 @@ class GasPartTable(TemporaryTable):
         if(overwrite==False and self.validate_table(self.validate_rule)):
             talk("Load existing {}.".format(self.clsstr), 'normal')
             self.load_table()
+            return
 
         talk("Building {} for {} gas particles".format(self.clsstr, len(pidlist)), 'normal')
 
@@ -681,6 +702,7 @@ class PhewPartTable(TemporaryTable):
         if(overwrite==False and self.validate_table(self.validate_rule)):
             talk("Load existing {}.".format(self.clsstr), 'normal')
             self.load_table()
+            return
         
         assert(self.gptable is not None)
 
@@ -799,6 +821,7 @@ class ProgTable(PermanentTable):
         if(overwrite == False and self.validate_table(self.validate_rule)):
             talk("Load existing {} file: {}".format(self.clsstr, self.filename), 'normal')
             self.load_table()
+            return
 
         talk("Finding progenitors for halos in snapshot_{:03d}".format(self.snapnum), 'normal')
         progtable = None
@@ -1031,6 +1054,7 @@ class InitTable(PermanentTable):
         if(overwrite == False and self.validate_table(self.validate_rule)):
             talk("Loading existing {} file: {}".format(self.clsstr, self.filename), 'normal')
             self.load_table()
+            return
         
         # Create new if not existed.
         dfi = winds.read_initwinds(self._path_winds, columns=['atime','PhEWKey','Mass','PID'], minPotIdField=True)
@@ -1090,7 +1114,7 @@ class PhEWTable(PermanentTable):
 
         # Must match the following parameters to validate an existinig table
         self.validate_rule = ValidateRuleExisted(
-            ignore_init=self._pars.get('ignore_init')
+            ignore_init=self._pars.get('ignore_init'),
             fformat=self._pars.get('fformat')
         )
 
@@ -1137,7 +1161,7 @@ class PhEWTable(PermanentTable):
             talk("The phewtable.parquet file still misses the 'Mloss' field. Use Simulation.compute_mloss_partition_by_pId() to patch the file.", "normal")
         
         if(spark is not None):
-            return spark.read.parquet(self._path_table)
+            self.data = spark.read.parquet(self._path_table)
         else:
             phewtable = pd.read_parquet(self._path_table)
             self.data = phewtable
@@ -1258,15 +1282,12 @@ class PhEWTable(PermanentTable):
             phewtable = self.load_table()
             # This is a very expensive operation
             phewtable['Mloss'] = phewtable.groupby('PId').diff().fillna(0.0)
-            schema = schema_phewtable
-            schema['columns'].append('Mloss')
-            schemaArrow = utils.pyarrow_read_schema(schema)
-            tab = pa.Table.from_pandas(phewtable, schema=schemaArrow,
-                                       preserve_index=False)
-            pq.write_table(tab, path_phewtable)
+            self._schema['columns'].append('Mloss')
+            self.data = phewtable
+            self.save_table()
         else:
             phewtable = self.load_phewtable(spark=spark)            
             w = Window.partitionBy(phewtable.PId).orderBy(phewtable.snapnum)
             phewtable = phewtable.withColumn('Mloss', phewtable.Mass - sF.lag('Mass',1).over(w)).na.fill(0.0)
-            phewtable.write.mode('overwrite').parquet(path_phewtable)
-        # TODO: Spark or not spark
+            self.data = phewtable
+            self.save_table(spark=spark)

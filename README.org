@@ -91,6 +91,18 @@ The configuration files consists of different categories, each with a set of par
 + HDF5ParticleTypes :: The numerical value that corresponds to a specific particle type. Particles of any specific type are stored under PartType#/ in the HDF5 file. By default, 0, 1, 4, 5 correspond to gas particles, dark matter particles, star particles and black hole seed particles (if exist). In zoom-in simulations, 2, 3 usually correspond to dark matter particles at finer levels of resolutions.
 + Derived :: A list of quantities that are not stored in the HDF5 files but can be derived from other HDF5 fields. For example, logT (log temperature) is a crucial gas property that needs to be derived from the U (internal energy), Ne (electron abundance) and Y (helium abundance) fields.
 
+API Example:
+#+BEGIN_SRC python
+>>> from config import SimConfig
+>>> cfg = SimConfig('/path/to/the/config/file.cfg')
+>>> cfg.sections()
+['DEFAULT', 'Paths', 'Schema', 'Verbose', 'Units', 'Cosmology', 'Default', 'Simulation', 'Ions', 'Zsolar', 'HDF5Fields', 'HDF5ParticleTypes', 'Derived']
+>>> cfg.keys('Simulation')
+['snapnum_reference', 'n_metals', 'elements']
+>>> cfg.get('Simulation', 'elements')
+'Z,Y,C,N,O,Ne,Mg,Si,S,Ca,Fe'
+#+END_SRC
+
 * Plotlib: Convenient APIs for Fine Tuning Figures for Journal Articles
 
 The current module implements the following classes:

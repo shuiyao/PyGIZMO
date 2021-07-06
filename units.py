@@ -5,20 +5,176 @@ Define the unit system to use.
 from astroconst import pc, ac
 from numpy import exp, log, pi, sqrt
 import configparser
-import config 
-
-# Gadget Units in comoving c.g.s
-UNITS = config.cfg['Units']
-
-UNIT_GADGET_L = float(UNITS['UnitLength_in_cm'])
-UNIT_GADGET_M = float(UNITS['UnitMass_in_g'])
-UNIT_GADGET_V = float(UNITS['UnitVelocity_in_cm_per_s'])
-UNIT_GADGET_B = float(UNITS['UnitMagneticField_in_gauss'])
-UNIT_GADGET_D = UNIT_GADGET_M / UNIT_GADGET_L ** 3
-UNIT_GADGET_T = UNIT_GADGET_L / UNIT_GADGET_V # 3.086e16 s ~ 0.97 Gyr
-UNIT_GADGET_U = UNIT_GADGET_V * UNIT_GADGET_V # (km/s **2)
+from config import SimConfig
+import abc
 
 class Units(object):
+    '''
+    Example
+    -------
+    u_tipsy = UnitsTipsy(lbox_in_mpc=50)
+    u_astro = UnitsDefault()
+    mass_physical = mass_tipsy * u_tipsy.m / u_astro.m
+    '''
+    
+    def __init__(self, config=SimConfig()):
+        self._cfg = config
+        self.l = 1.0
+        self.m = 1.0
+        self.t = 1.0
+        self.d = 1.0
+        self.v = 1.0
+        self.u = 1.0
+        self.b = 1.0
+        self._units = {}
+        self._update_units()
+
+    def _update_units(self):
+        self._units['length'] = self.l
+        self._units['mass'] = self.m
+        self._units['time'] = self.t
+        self._units['velocity'] = self.v
+        self._units['density'] = self.d
+        self._units['energy'] = self.u
+        self._units['magneticfield'] = self.b
+
+    def keys(self):
+        return ['length', 'mass', 'time', 'velocity', 'density',
+                'energy', 'magneticfield']
+
+    def get_unit(self, unitstr):
+        '''
+        Get the unit specified in the unitstr.
+
+        Parameters
+        ----------
+        unitstr: String.
+            One of ['length', 'mass', 'time', 'velocity', 'density', 'energy',
+            'magneticfield'].
+        '''
+
+        if(unitstr not in self.keys()):
+            raise KeyError("Supported unit strings: {}".format(self.keys()))
+        
+        return self._units[unitstr]
+
+    def convert(self, arr, unitstr):
+        '''
+        Convert an array of values in the current unit system to c.g.s.
+
+        Parameters
+        ----------
+        arr: ArrayLike.
+            The input array.
+        unitstr: String.
+            One of ['length', 'mass', 'time', 'velocity', 'density', 'energy',
+            'magneticfield'].
+        '''
+
+        unit = self.get_unit(unitstr)
+        return arr * unit
+
+    @property
+    def units(self):
+        return self._units
+
+class UnitsDefault(Units):
+    def __init__(self, config=SimConfig()):
+        super(UnitsDefault, self).__init__(config)
+
+        system_units = self._cfg.get('Units')
+        # The system unit is NOT a self-consistent system
+        self.l = float(system_units['SystemLength'])        # 1 kpc
+        self.m = float(system_units['SystemMass'])          # 1 Msolar
+        self.t = float(system_units['SystemTime'])          # 1 Myr
+        self.d = float(system_units['SystemDensity'])       # H/cm^3
+        self.v = float(system_units['SystemVelocity'])      # 1 km/s
+        self.u = float(system_units['SystemEnergy'])        # 10000 K (XH=0.76)
+        self.b = float(system_units['SystemMagneticField']) # 1 Gauss
+
+class UnitsComoving(Units):
+    def __init__(self, hubble_param, a=None, z=None, config=SimConfig()):
+        '''
+        Parameters
+        ----------
+        hubble_param: float. Default: 0.7
+          The hubble constant of the Universe is hubble_param * 100 km/s/Mpc
+        a: float. Default: 1.0
+          The scale factor of the Universe. Related to redshift as a = 1/(1+z)
+        lbox_in_mpc: float. Default: -1
+          The box length in Mpc.
+          Required for unit conversion with the tipsy system.
+        '''
+
+        super(UnitsComoving, self).__init__(config)
+        
+        self._hubble_param = hubble_param
+        self._validate_input(a=a, z=z)
+        self.a = 1./(1.+z) if (a is None) else a
+        self.z = 1./a - 1. if (z is None) else z
+        self._comoving = True
+
+    @staticmethod
+    def _validate_input(a=None, z=None):
+        if(a is not None and z is not None):
+            raise ValueError("Can only take either a or z but not both.")
+        if(a is None and z is None):
+            raise ValueError("Must set either a or z.")
+
+        if(z is None):
+            try:
+                a = float(a)
+            except:
+                raise TypeError("One must be able to cast a into float.")
+            if(a <= 0.0 or a > 1.0):
+                raise ValueError(f"a = {a} is out of bounds 0 < a <= 1.")
+        if(a is None):
+            try:
+                z = float(z)
+            except:
+                raise TypeError("One must be able to cast z into float.")
+            if(z < 0.0):
+                raise ValueError(f"z = {z} is out of bounds z >= 0")
+
+    def update_atime(self, a):
+        self.__class__._validate_input(a)
+        self.comoving_to_physical()
+        self.physical_to_comoving(a)
+        self.a = a
+        self.z = 1./a - 1.
+
+    def update_redshift(self, z):
+        self.__class__._validate_input(z)
+        self.update_atime(1./(z + 1.))
+
+    def comoving_to_physical():
+        if(not self._comoving):
+            return
+        self.l = self.l * self.a
+        self.v = self.v * sqrt(self.a)
+        self.d = self.d / (self.a ** 3)
+        self._comoving = False
+        self._update_units()        
+
+    def physical_to_comoving():
+        if(self._comoving):
+            return
+        self.l = self.l / self.a
+        self.v = self.v / sqrt(self.a)
+        self.d = self.d * (self.a ** 3)
+        self._comoving = True
+        self._update_units()
+
+    @property
+    def hubble_param(self):
+        return self._hubble_param
+
+    @property
+    def comoving(self):
+        return self._comoving
+
+    
+class UnitsGIZMO(UnitsComoving):
     '''
     Unit definition in GIZMO:
 
@@ -44,75 +200,71 @@ class Units(object):
     DIVERGENCE_DAMPING_FIELD_physical = DIVERGENCE_DAMPING_FIELD_code (again, in-code, psi_physical = a_scale^3 psi_code)
 
     http://www.tapir.caltech.edu/~phopkins/Site/GIZMO_files/gizmo_documentation.html#snaps-units
-
-    Parameters
-    ----------
-    system: string. Default: default
-      The unit system. Must be one of ['default', 'gadget'('gizmo'), 'tipsy', 'cgs']
-    hubble_param: float. Default: 0.7
-      The hubble constant of the Universe is hubble_param * 100 km/s/Mpc
-    a: float. Default: 1.0
-      The scale factor of the Universe. Related to redshift as a = 1/(1+z)
-    lbox_in_mpc: float. Default: -1
-      The box length in Mpc.
-      Required for unit conversion with the tipsy system.
-    comoving: bool. Default: False
-      If True, keep units in comoving system.
-
-    Example
-    -------
-    u_tipsy = Units('tipsy', lbox_in_mpc=50)
-    u_astro = Units('default')
-    mass_physical = mass_tipsy * u_tipsy.m / u_astro.m
     '''
-    def __init__(self, system="default", hubble_param=0.7, a=1.0, lbox_in_mpc=-1, comoving=False):
-        self.a = a
-        self.hubble_param = hubble_param
-        if(system == 'default'):
-            # Not a consistent system
-            self.l = ac.kpc
-            self.t = ac.myr
-            self.m = ac.msolar
-            self.d = pc.mh # m_H / cm**3
-            self.v = 1.0e5 # km/
-            self.u = pc.k * 1.e4 / pc.mh # ~ 1.e4 K
-            self.b = 1.0
-        elif(system == 'cgs'):
-            self.l = 1.0
-            self.t = 1.0
-            self.m = 1.0
-            self.d = 1.0
-            self.v = 1.0
-            self.u = 1.0
-            self.b = 1.0            
-        elif(system == 'gadget' or system == 'gizmo'):
-            self.l = UNIT_GADGET_L / hubble_param
-            self.t = UNIT_GADGET_T / hubble_param
-            self.m = UNIT_GADGET_M / hubble_param
-            self.d = UNIT_GADGET_D / (hubble_param ** 2)
-            self.v = UNIT_GADGET_V
-            self.u = UNIT_GADGET_U
-            self.b = UNIT_GADGET_B
-        elif(system == 'tipsy'):
-            assert (lbox_in_mpc > 0), "Have to set lbox_in_mpc in the 'tipsy' unit system!"
-            self.l = lbox_in_mpc * ac.mpc / hubble_param
-            self.d = ac.rhobar # H0 = 100 km/s/Mpc
-            self.t = (self.d * pc.G)**(-0.5) / (hubble_param * hubble_param)
-            # (8.*pi/3.)**(0.5)*ac.mpc / (100.*hubble_param**2*UNIT_GADGET_V)
-            self.m = self.d * self.l**3 * (hubble_param ** 2)
-            self.v = self.l / self.t
-            self.u = self.v * self.v
-            self.b = 1.0
-        else:
-            raise ValueError("Argument 'system' must be one of ['default', 'gadget', 'tipsy', 'cgs']")
-        if not comoving:
-            self._convert_comoving_to_physical(a)
+    
+    def __init__(self, hubble_param, a=None, z=None):
+        '''
+        Parameters
+        ----------
+        hubble_param: float.
+          The hubble constant of the Universe is hubble_param * 100 km/s/Mpc
+        a: float. Default: 1.0
+          The scale factor of the Universe. Related to redshift as a = 1/(1+z)
+        '''
 
-    def _convert_comoving_to_physical(self, a):
-        self.l = self.l * a
-        self.m = self.m
-        self.v = self.v * sqrt(a)
-        self.d = self.d / (a ** 3)
-        self.u = self.u
-        self.t = self.t
-        self.b = self.b
+        if(a is None and z is None):
+            a = 1.0
+        super(UnitsGIZMO, self).__init__(hubble_param=hubble_param, a=a, z=z)
+
+        # Gadget Units in comoving c.g.s
+        self.l = float(self._cfg.get("Units",'UnitLength_in_cm'))
+        self.m = float(self._cfg.get("Units",'UnitMass_in_g'))
+        self.v = float(self._cfg.get("Units",'UnitVelocity_in_cm_per_s'))
+        self.b = float(self._cfg.get("Units",'UnitMagneticField_in_gauss'))
+        self.d = self.m / self.l ** 3
+        self.t = self.l / self.v # 3.086e16 s ~ 0.97 Gyr
+        self.u = self.u * self.u # (km/s **2)
+
+        self.l = self.l / self.hubble_param
+        self.t = self.t / self.hubble_param
+        self.m = self.m / self.hubble_param
+        self.d = self.d / (self.hubble_param ** 2)
+
+        self._update_units()
+
+class UnitsTipsy(UnitsComoving):
+    def __init__(self, lbox_in_mpc, hubble_param, a=None, z=None):
+        '''
+        Parameters
+        ----------
+        hubble_param: float.
+          The hubble constant of the Universe is hubble_param * 100 km/s/Mpc
+        a: float. Default: 1.0
+          The scale factor of the Universe. Related to redshift as a = 1/(1+z)
+        lbox_in_mpc: float.
+          The box length in Mpc.
+          Required for unit conversion with the tipsy system.
+        '''
+
+        if(a is None and z is None):
+            a = 1.0
+        
+        super(UnitsTipsy, self).__init__(hubble_param, a=a, z=z)
+        assert (lbox_in_mpc > 0), "Have to set lbox_in_mpc in the 'tipsy' unit system!"
+
+        self._boxsize = lbox_in_mpc
+
+        self.l = lbox_in_mpc * ac.mpc / self.hubble_param
+        self.d = ac.rhobar # H0 = 100 km/s/Mpc
+        self.t = (self.d * pc.G)**(-0.5) / (self.hubble_param * self.hubble_param)
+        # (8.*pi/3.)**(0.5)*ac.mpc / (100.*hubble_param**2*UNIT_GADGET_V)
+        self.m = self.d * self.l**3 * (self.hubble_param ** 2)
+        self.v = self.l / self.t
+        self.u = self.v * self.v
+        self.b = 1.0
+
+        self._update_units()
+
+    @property
+    def boxsize(self):
+        return self._boxsize

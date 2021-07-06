@@ -11,15 +11,17 @@ from pdb import set_trace
 
 import json
 import sys
-from config import cfg
+from config import SimConfig
 import glob
 
 
 import pyarrow as pa
 import pyarrow.parquet as pq
 
-path_schema = os.path.join(cfg['Paths']['pygizmo'], cfg['Schema']['galaxy'])
+cfg = SimConfig()
 
+path_schema_default = os.path.join(
+    cfg.get('Paths', 'pygizmo'), cfg.get('Schema','galaxy'))
 pyArrowTypeCast = {
     "int64":pa.int64(),
     "int32":pa.int32(),
@@ -56,7 +58,7 @@ def cumhist(arr, bins=10, weights=None, reverse=False):
         cum.append(cum[-1]+value)
     return array(cum), edges
     
-def load_default_schema():
+def load_default_schema(path_schema=path_schema_default):
     '''
     Load the default schemas for a couple of simulation outputs.
     The default schemas are saved in a JSON file named "schema.json"
@@ -67,12 +69,12 @@ def load_default_schema():
 
 def talk(text, verbose_level='always', verbose_limit=None, err=False):
     if(verbose_limit is None):
-        verbose_limit = cfg['Verbose']['default']
+        verbose_limit = cfg.get('Verbose','default')
     else:
         if(isinstance(verbose_limit, str)):        
-            verbose_limit = cfg['Verbose'][verbose_limit.lower()]
+            verbose_limit = cfg.get('Verbose',verbose_limit.lower())
     if(isinstance(verbose_level, str)):
-        verbose_level = cfg['Verbose'][verbose_level.lower()]
+        verbose_level = cfg.get('Verbose',verbose_level.lower())
     if(verbose_level > verbose_limit):
         return
     dest = sys.stderr if err else sys.stdout

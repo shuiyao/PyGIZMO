@@ -37,6 +37,7 @@ class ProgTracker():
         hostmap: pandas.DataFrame
             Columns: snapnum*, haloId*, hostId
         '''
+
         fout = os.path.join(simulation._path_workdir, "hostmap.csv")
         if(os.path.exists(fout) and overwrite == False):
             talk("Read existing hostmap file: {}".format(fout), 'normal')

@@ -13,27 +13,25 @@ import warnings
 import units
 from astroconst import pc, ac
 
-import config
+from config import SimConfig
 from utils import talk
 
 import progen
 
-cfg = config.cfg
-
 path_schema = "data/HDF5schema.csv"
 hdf5schema = pd.read_csv(path_schema, header=0).set_index('FieldName')
-PATHS = cfg['Paths']
 
 class Snapshot(object):
     
-    def __init__(self, model, snapnum, verbose=None):
+    def __init__(self, model, snapnum, verbose=None, config=SimConfig()):
         self._model = model
         self._snapnum = snapnum
-        self._path_data = os.path.join(PATHS['data'], model)
+        self._cfg = config
+        self._path_data = os.path.join(self._cfg.get('Paths','data'), model)
         self._path_hdf5 = os.path.join(self._path_data, "snapshot_{:03d}.hdf5".format(snapnum))
-        self._path_workdir = os.path.join(PATHS['workdir'], model)
-        self._path_tmpdir = os.path.join(PATHS['tmpdir'], model)
-        self._path_figure = os.path.join(PATHS['figure'], model)
+        self._path_workdir = os.path.join(self._cfg.get('Paths','workdir'), model)
+        self._path_tmpdir = os.path.join(self._cfg.get('Paths','tmpdir'), model)
+        self._path_figure = os.path.join(self._cfg.get('Paths','figure'), model)
         self.verbose = verbose
 
         if(not os.path.exists(self._path_workdir)):
@@ -77,9 +75,14 @@ class Snapshot(object):
         self.halos = None
         self._n_gals = None
 
-        self._boxsize_in_cm = self._boxsize * float(cfg['Units']['UnitLength_in_cm'])
-        self._units_tipsy = units.Units('tipsy', lbox_in_mpc = self._boxsize_in_cm / ac.mpc)
-        self._units_gizmo = units.Units('gadget')
+        self._boxsize_in_cm = self._boxsize * float(self._cfg.get('Units','UnitLength_in_cm'))
+        self._units_tipsy = units.UnitsTipsy(
+            lbox_in_mpc = self._boxsize_in_cm / ac.mpc,
+            hubble_param = self._h,
+            a=self._ascale)
+        self._units_gizmo = units.UnitsGIZMO(
+            hubble_param = self._h,
+            a=self._ascale)
 
         self._progtable = None
         self._act = None
@@ -119,18 +122,18 @@ class Snapshot(object):
 
     def _get_fields_todo(self, fields, fields_exist=set()):
         if(isinstance(fields, list)): fields = set(fields)
-        fields_derived = fields & set(cfg['Derived'])
+        fields_derived = fields & set(self._cfg.get('Derived'))
         fields_derived = fields_derived ^ (fields_derived & fields_exist)
         # Need to load all the dependencies of the derived fields
         for field in fields_derived:
-            fields_temp = set(cfg['Derived'][field].split(sep=','))
+            fields_temp = set(self._cfg.get('Derived',field).split(sep=','))
             fields = fields | fields_temp
         fields_todrop = fields_exist ^ (fields & fields_exist)
         # Only keep the fields that is not existed
         fields = fields ^ (fields & fields_exist)
         fields_hdf5 = hdf5schema.index.intersection(fields)
         fields_pos = fields & set(['x', 'y', 'z'])        
-        elements = cfg['Simulation']['elements'].split(sep=',')
+        elements = self._cfg.get('Simulation','elements').split(sep=',')
         fields_metals = fields & set(elements)
         talk("Fields to be derived: {}".format(fields_derived), 'quiet')
         talk("Fields to load: {}".format(fields), 'quiet')
@@ -217,11 +220,11 @@ class Snapshot(object):
         if(isinstance(ptype, int)):
             assert(0 <= ptype < 6), "ptype={} is out of range [0, 6)".format(ptype)
         else:
-            assert(ptype in cfg['HDF5ParticleTypes']), "ptype={} is not a valid type.".format(ptype)
-            ptype = int(cfg['HDF5ParticleTypes'][ptype])
+            assert(ptype in self._cfg.get('HDF5ParticleTypes')), "ptype={} is not a valid type.".format(ptype)
+            ptype = int(self._cfg.get('HDF5ParticleTypes',ptype))
         
         cols = {}
-        elements = cfg['Simulation']['elements'].split(sep=',')        
+        elements = self._cfg.get('Simulation','elements').split(sep=',')        
         with h5py.File(self._path_hdf5, "r") as hf:
             try:
                 hdf5part = hf['PartType'+str(ptype)]
