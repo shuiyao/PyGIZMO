@@ -6,8 +6,8 @@
 
 #+TITLE: PyGIZMO: Python APIs for the GIZMO Simulation
 #+AUTHOR: Shuiyao (Charlie) Huang
-#+DATE: <2021-06-20>
-#+EMAIL: shuiyao@umass.edu
+#+DATE: <2021-07-01>
+#+EMAIL: shuangumass@gmail.com
 
 * Introduction
 
@@ -22,6 +22,11 @@ In addition, PyGIZMO implements several high-level functionalities such as gener
 Finally, PyGIZMO provides many plotting modules that enable quick inspection of the simulation data as well as making complicated figures for journal publications.
 
 Future Works: Implement a set of APIs that interact with simulation data and /specexbin/, a C program for generating mock quasar absorption line spectra. Add modules that analyze the output spectra, e.g., fit line profiles to different ions in the spectra and obtain their physical properties such as column density, equivalent width, etc.
+
+
+#+CAPTION: Class Diagram for PyGIZMO
+#+NAME: fig:classdiagram
+[[./figures/classdiagram.png]]
 
 * Quick Start
 
@@ -60,7 +65,7 @@ This *jupyter notebook* demonstrates several basic and advanced user cases of th
 
 * Configuration
 
-The configuration file pygizmo.cfg (*sample*) controls many global parameters that defines and controls:
+The configuration file pygizmo.cfg ([[https://github.com/shuiyao/PyGIZMO/blob/main/pygizmo.cfg][sample]]) controls many global parameters that defines and controls:
 + The general behaviors of PyGIZMO
 + The input formats and units of the simulation outputs
 + Default settings of the plotting modules, i.e., plotlib
@@ -74,21 +79,31 @@ The configuration files consists of different categories, each with a set of par
            - workdir: Location for derived and compiled results (e.g., grid data for the phase diagram, galaxy statistics), some permanent tables that are frequently loaded (e.g., progtable).
            - tmpdir: Location for 'cached' data, e.g., temporary tables, halo particle data used for plotting.
            - figure: Output location for figures.
-           - sci:
+
 + Schema :: The schema for different source data.
+
 + Verbose :: The numeric values for different levels of verbosity.
+
 + Units :: The default units for length, mass, velocity and magnetic field strength. The GIZMO/GADGET tradition uses 1 kpc, 10^10 M_solar, 1 km/s and 1 Gauss.
+
 + Cosmology :: Cosmological parameters. Should be the same as in the simulation.
+
 + Default :: A list of default values
              - logT\under{}threshold: The log temperature that separates cold and hot gas.
+
 + Simulation :: Some attributes specific to each simulation
                 - snapnum\under{}reference: Defines the ascales of all simulation snapshots.
                 - n\under{}metals: Total number of elements in the Metallicity field.
                 - elements: Ordered list that defines the name of elements in the Metallicity field.
+
 + Ions :: TODO. Properties of several important ion spectral lines.
+
 + Zsolar :: Abundances of various elements in the solar atmosphere. Often used to normalize metallicity.
+
 + HDF5Field :: Shortnames for HDF5 fields
+
 + HDF5ParticleTypes :: The numerical value that corresponds to a specific particle type. Particles of any specific type are stored under PartType#/ in the HDF5 file. By default, 0, 1, 4, 5 correspond to gas particles, dark matter particles, star particles and black hole seed particles (if exist). In zoom-in simulations, 2, 3 usually correspond to dark matter particles at finer levels of resolutions.
+
 + Derived :: A list of quantities that are not stored in the HDF5 files but can be derived from other HDF5 fields. For example, logT (log temperature) is a crucial gas property that needs to be derived from the U (internal energy), Ne (electron abundance) and Y (helium abundance) fields.
 
 API Example:
@@ -284,6 +299,11 @@ Draw an overall view of the configuration of various types of particles in a sel
 
 One can make a movie (*sample*) showing the evolution of the halo over time by identifying and showing its progenitors in previous snapshots.
 
+** Class diagram
+#+CAPTION: Class Diagram for the Plotting Module
+#+NAME: fig:plotlib
+[[./figures/plotlib.png]]
+
 * Galaxy and Halo Properties
 
 The ~Analysis~ classes provides functions that compute key diagnostic statistics and analytics for galaxy and halo properties, such as the galactic stellar mass functions (~Gsmf~), stellar mass - halo mass functions (~Smhm~), mass metallicity relation (~Mzr~), halo gas components (~HaloGasComponents~) and halo radial profiles (~RadialProfile~). The results are often saved as permanent tables in designated locations that can be used by the plotting modules for making scientific figures.
@@ -341,7 +361,13 @@ The DerivedTable has two sub-classes, PermanentTable and TemporaryTable. The per
 
 * Merger Trees
 <<sec:mergertree>>
+
+
 ** Halo Merger Trees
+#+CAPTION: Definitions of Relations Between Halos
+#+NAME: fig:progentiors
+[[./figures/prog.png]]
+
 Halo merger trees define the relation between two halos at different time. In a simulation, a halo is uniquely determined by a pair Halo(haloId, snapnum), where haloId is the ID of the halo at a particular snapshot (snapnum). 
 
 A halo merger tree reconstructs the assembly history of any halo from a snapshot, locating its main /progenitor/ in all previous snapshots since its formation and defines the relations between all halos at a snapshot to the progenitor at the same snapshot.
@@ -497,7 +523,12 @@ mwtable.groupby('birthTag')['Mgain'].sum()
 ** Algorithm
 *** Classification scheme
 <<sec:categories>>
-This following *diagram* demonstrates the algorithm for classifying gas particles according to their accretion history. In a typical scenario, one looks at all the gas particles (form a list of particle IDs, i.e., pidlist) that recently accreted into a galaxy (/target galaxy/) at some time, and classifies them into several accretion mode according their evolution histories at earlier times before accretion. PyGIZMO tracks each of the particle by their unique particle ID over previous snapshots and extracts key information that help classify the particle into one of the following /accretion modes/:
+
+#+CAPTION: Classification of Gas Accretion
+#+NAME: fig:accretionEngine
+[[./figures/accretionengine.png]]
+
+This following [[fig:accretionEngine][diagram]] demonstrates the algorithm for classifying gas particles according to their accretion history. In a typical scenario, one looks at all the gas particles (form a list of particle IDs, i.e., pidlist) that recently accreted into a galaxy (/target galaxy/) at some time, and classifies them into several accretion mode according their evolution histories at earlier times before accretion. PyGIZMO tracks each of the particle by their unique particle ID over previous snapshots and extracts key information that help classify the particle into one of the following /accretion modes/:
 
 + /Merger/: The particle was found in another galaxy at some previous time (already accreted at least once prior to the current accretion event). 
 + /Primordial/: For first time accretion, the original component of a gas particle is classified as primordial accretion, which has two sub-categories
@@ -511,9 +542,8 @@ This following *diagram* demonstrates the algorithm for classifying gas particle
 
 *** Tracking wind component
 <<sec:windTracking>>
-More about tracking recycled materials: In a PhEW simulation, a normal gas particle may constantly get wind materials from different neighboring wind particles. Tracking every single mass flow between normal gas particles and wind particles and keeping track of where the wind particles came from will take too much disc space and is therefore impractical. Instead, we provide an approximate solution ('Bayesian machine' in the diagram) relying on computing the posterior probability of a gas particle getting materials from each of the recycled categories between two snapshots. See this *journal article* for details.
 
-PubSub
+More about tracking recycled materials: In a PhEW simulation, a normal gas particle may constantly get wind materials from different neighboring wind particles. Tracking every single mass flow between normal gas particles and wind particles and keeping track of where the wind particles came from will take too much disc space and is therefore impractical. Instead, we provide an approximate solution ('Bayesian machine' in the diagram) relying on computing the posterior probability of a gas particle getting materials from each of the recycled categories between two snapshots. See this *journal article* for details.
 
 
 *** Particle splitting
@@ -556,7 +586,11 @@ In the end, the final /gptable/ should contain len(pidlist) unique PIds, each ha
 
 ** Implementation
 
-The accretion tracking engine relies on a set of permanent tables that need to be computed once for each simulation and a set of temporary tables that need to be constructed each time when one selects a new target halo from a snapshot. The following *diagram* demonstrates the workflow.
+The accretion tracking engine relies on a set of permanent tables that need to be computed once for each simulation and a set of temporary tables that need to be constructed each time when one selects a new target halo from a snapshot. The following diagram demonstrates the workflow.
+
+#+CAPTION: Workflow of the Wind Tracking Engine
+#+NAME: fig:workflow
+[[./figures/workflow.png]]
 
 *** Data structures and schema
 
@@ -735,3 +769,4 @@ Future work.
 [[https://arxiv.org/abs/2005.13585][The Physically Evolved Winds (PhEW) Model, Journal Article, I. Model]]
 
 [[https://arxiv.org/abs/2106.01511][The Physically Evolved Winds (PhEW) Model, Journal Article, II. Implementation]]
+
