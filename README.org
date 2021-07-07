@@ -249,10 +249,10 @@ V. 2 x 2, tight layout with legends
 LinePlot provides a unified interface for making line-type plot that includes data from various sources (both models/simulations and observational/experimental data) in a single panel. A popular user case is to compare the GSMFs from many simulations to observational data in a same plot.
 
 It relies on two external files as input:
-+ A configuration file (e.g., "lineplot.cfg") that defines the default panel-level attributes (e.g., the x/y limits, labels, tick formats, fontsizes) of different types of plots.
++ A configuration file (e.g., "[[./plotlib/lineplot.cfg][lineplot.cfg]]") that defines the default panel-level attributes (e.g., the x/y limits, labels, tick formats, fontsizes) of different types of plots.
 + A tabular file that defines the color/style schema for various models. The same schema could be used for various types of plots for consistency. Here is an example table:
 
-#+Name: models.dat
+#+NAME: tab:models
 | model       | color | style | size | label     |
 |-------------+-------+-------+------+-----------|
 | l25n288-mfm | red   | -     |    2 | MFM-Hres  |
@@ -338,7 +338,7 @@ for i, z in enumerate(redshifts):
   lines.draw()
 #+END_SRC
 
-To compare the results with other simulations and observational data, replace the last section with (with a input file like [[models.dat][this one]]):
+To compare the results with other simulations and observational data, replace the last section with (with a input file like [[tab:models][this one]]):
 #+BEGIN_SRC python
 models = ['l25n144-test', 'l25n288-test', 'l25n144-final', 'l25n288-final']
 observations = ['baldry12', 'tomczak14', 'tomczak14', 'song16']
