@@ -22,7 +22,7 @@ from astroconst import pc, ac
 from scipy import integrate
 from scipy.interpolate import interp1d
 import ioformat
-import config
+from config import SimConfig
 import utils
 
 # Everything is in c.g.s units.
@@ -33,7 +33,10 @@ import utils
 #   = Vc^3 / (10. * G * H(z))
 # H(z) = H0 [OmegaL + (1-Omega0-OmegaL)(1+z)^2 + Omega0(1+z)^3]^(1/2)
 
-cosmo_param = config.cfg['Cosmology']
+
+cfg = SimConfig()
+
+cosmo_param = cfg.get('Cosmology')
 
 class Cosmology():
     '''

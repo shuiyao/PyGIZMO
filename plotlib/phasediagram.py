@@ -38,8 +38,8 @@ class PhaseDiagram():
     def draw(self, annotate=True):
         self._draw_heatmap()
         ax_top = self._update_top_x_axis()
-        self.ax.set_xlabel(r'$log(\rho/\bar{\rho})$')        
-        self.ax.set_ylabel(r'$log(T/K)$')
+        self.ax.set_xlabel(r)        
+        self.ax.set_ylabel(r)
         if(annotate):
             self.annotate_phase_regions(0.0)
 
