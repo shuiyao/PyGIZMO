@@ -1235,7 +1235,7 @@ class PhEWTable(PermanentTable):
             phewtable = pd.read_parquet(self._path_table)
             self.data = phewtable
 
-    def build_table(self, snaplast=None, overwrite=False, ignore_init=False, spark=None):
+    def build_table(self, snaplast=None, overwrite=False, ignore_init=False, inittable=None, spark=None):
         '''
         Build a gigantic table that contains all PhEW particles ever appeared in a
         simulation. The initial status and the final status of a PhEW particle is
@@ -1289,7 +1289,8 @@ class PhEWTable(PermanentTable):
             phewtable = gp.copy() if phewtable is None else pd.concat([phewtable, gp])
 
         if (not ignore_init):
-            inittable = self.build_inittable()
+            assert(inittable is not None),"ignore_init is False but inittable is None."
+            
             tmp = inittable[['PId','minit','snapfirst']]\
                 .rename(columns={'minit':'Mass','snapfirst':'snapnum'})
             tmp['haloId'] = 0 # Unknown

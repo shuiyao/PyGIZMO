@@ -20,7 +20,6 @@ HaloId = 715:
 HaloId = 568:
   + In a cluster environment
 '''
-__mode__ = "X"
 
 import numpy as np
 import pandas as pd
@@ -76,11 +75,16 @@ class AccretionTracker():
     def __init__(self, model, snapnum):
         self._snap = snapshot.Snapshot(model, snapnum)
         self._simulation = simulation.Simulation(model)
-        self.model = model
-        self.snapnum = snapnum
-        self.path_base = self._simulation._path_tmpdir
-        self.gptable = None
-        self.pptable = None
+        self._model = model
+        self._snapnum = snapnum
+        self._path_base = self._simulation._path_tmpdir
+        self._gptable = None
+        self._pptable = None
+        self._inittable = None
+        self._phewtable = None
+        self._hosttable = None
+        self._splittable = None
+        self._progtable = None
 
     @classmethod
     def from_snapshot(cls, snap):
@@ -88,7 +92,7 @@ class AccretionTracker():
         act._snap = snap
         return act
 
-    def initialize(self):
+    def initialize(self, spark=None):
         '''
         Prepare all required permanent tables for accretion tracking. 
         Build the tables if they are not already existed.
@@ -100,62 +104,36 @@ class AccretionTracker():
         '''
         
         talk("\nAccretionTracker: Initializing permanent tables...", "talky")
-        self._simulation.build_inittable()
+
+        from derivedtables import InitTable, PhEWTable, ProgTable, HostTable, SplitTable
+
+        self._inittable = InitTable(self._model)
+        self._phewtable = PhEWTable(self._model)
+        self._hosttable = HostTable(self._model)
+        self._splittable = SplitTable(self._model)
+        self._progtable = ProgTable(self._model, snapnum=108)
+
         try:
-            self._simulation.load_phewtable()
+            self._phewtable.load_table()
         except:
-            self._simulation.build_phewtable()
-        # If the phewtable is half-built, then complete it and reload
-        if('Mloss' not in self._simulation._phewtable.columns):
-            self._simulation.compute_mloss_partition_by_pId(spark=spark)
-            self._simulation.load_phewtable()            
-        self._simulation.load_hostmap()
-        self._snap.load_progtable()
-        self._simulation.build_splittable()
+            if(not self._inittable.load_table()):
+                self._inittable.build_table(overwrite=True)
+                self._inittable.save_table()
+            self._phewtable.build_table(inittable=self._inittable.data)
+            self._phewtable.add_field_mloss(spark=spark)
+            self._phewtable.save_table(spark=spark)
 
-    @staticmethod
-    def update_mgain_for_split_events(gptable, splittable):
-        '''
-        In case there was splitting between the last snapshot and the current 
-        snapshot, gather information from the splittable and update the rows 
-        where a split happened.
-          - If this is a new born particle, 
-            define mgain = gptable.Mass - splittable.Mass / 2
-          - If this is a splitting particle, 
-            define mgain = mgain + splittable.Mass / 2
-        '''
+        if(not self._hosttable.load_table()):
+            self._hosttable.build_table()
+            self._hosttable.save_table()
 
-        # Splitted particle, add back the lost portion
-        df = pd.merge(gptable, ancestors, how='left',
-                      left_on=['PId','snapnum'], right_on=['PId','snapnext'],
-                      suffixes=(None, '_r'))
-        df.Mass_r = df.Mass_r.fillna(0.0) / 2.0
-        df.Mgain = df.Mgain + df.Mass_r
+        if(not self._splittable.load_table()):
+            self._splittable.build_table()
+            self._splittable.save_table()
 
-        
-        df_spt = [['parentId','snapnext','Mass']]
-        df_spt['dMass'] = df_spt['Mass'] / 2
-        df_spt.rename(columns={'parentId':'PId'}, inplace=True)
-
-        df = pd.concat([df_new['PId','snapnext','dMass'],
-                        df_spt['PId','snapnext','dMass']], axis=0)
-
-        df_spt = df_spt.groupby(['PId','snapnext'])['dMass'].sum()
-        df_spt = pd.merge(gptable, df_spt, how='inner',
-                          left_on=['PId','snapnum'], right_index=True)
-        df_spt['dMass'] = df_spt['dMass'].fillna(0.0)
-        df_spt['Mgain'] = df_spt['Mgain'] + df_spt['dMass']
-
-        df_new = pd.merge(gptable, df_new[['PId','snapnext','dMass']], how='inner',
-                          left_on=['PId','snapnum'], right_on=['PId','snapnext'])
-        df_new['dMass'] = df_new['dMass'].fillna(0.0)
-        df_new['Mgain'] = df_new['Mass'] - df_new['dMass']
-
-        df = pd.concat([df_new, df_spt], axis=0)
-        
-        # Now select only parentIds that are in the gptable
-        df.drop(['dMass'], axis=1, inplace=True)
-        return df
+        if(not self._progtable.load_table()):
+            self._progtable.build_table()
+            self._progtable.save_table()
 
     def build_temporary_tables_for_galaxy(self, galIdTarget, rebuild=False, include_stars=False, spark=None):
         '''
@@ -174,48 +152,43 @@ class AccretionTracker():
             If True, rebuild the gptable, otherwise load existing file.
         '''
         
-        talk("\nAccretionTracker: Building temporary tables for galId={} at snapnum={}".format(galIdTarget, self.snapnum), "talky")
+        talk("\nAccretionTracker: Building temporary tables for galId={} at snapnum={}".format(galIdTarget, self._snapnum), "talky")
+
+        self._gptable = GasPartTable(self._model, self._snapnum, galIdTarget)
+        self._pptable = PhEWPartTable.from_gptable(self._gptable)
+
         # Get the particle ID list to track
-        if(not self.load_gptable(galIdTarget, verbose='quiet') or rebuild==True):
+        if(not self._gptable.load_table(verbose='quiet') or rebuild==True):
             pidlist = self._snap.get_gas_particles_in_galaxy(galIdTarget)
             if(include_stars):
                 pidlist += self._snap.get_star_particles_in_galaxy(galIdTarget)
 
-            # In case of splitting, find all ancestors of any gas particle
-            self._ancestors = self.__class__._find_particle_ancestors(self._simulation._splittable, pidlist)
-
             # Create/Load gptable
-            self.build_gptable(pidlist, include_stars=include_stars, rebuild=True)
+            self._gptable.build_gptable(pidlist, include_stars=include_stars, overwrite=True)
             # Compute the 'Mgain' field for all gas particles in gptable
-            self.gptable = self.__class__.compute_mgain_partition_by_pId(self.gptable)
+            self._gptable.add_field_mgain()
             # Add their relations to galIdTarget
-            self.gptable = self.__class__.add_relation_field_to_gptable(
-                galIdTarget,
-                self.gptable,
-                self._snap._progtable,
-                self._simulation._hostmap
-            )
-            self.save_gptable(galIdTarget)
+            self._gptable.add_field_relation(self._progtable.data, self._hosttable.data)
+            self._gptable.save_table()
 
         # Create/Load pptable
-        if(not self.load_pptable(galIdTarget, verbose='quiet') or rebuild == True):
-            self.build_pptable(
-                self._simulation._inittable,
-                self._simulation._phewtable,
-                rebuild=True
-            )
+        if(not self._pptable.load_table(verbose='quiet') or rebuild == True):
+            self._pptable.build_table(
+                self._inittable.data,
+                self._phewtable.data,
+                overwrite=True)
+
             # Add birthtags relative to galIdTarget
-            self.pptable = self.add_birthtag_field_to_pptable(
+            self._pptable.add_field_birthtag(
                 galIdTarget,
-                self.pptable,
-                self._snap._progtable,
-                self._simulation._hostmap
+                self._progtable.data,
+                self._hosttable.data
             )
-            self.save_pptable(galIdTarget)
+            self._pptable.save_table()
 
     def verify_temporary_tables(self):
         '''
-        Verify that self.gptables and self.pptables meets all requirements.
+        Verify that self.gptable and self.pptable meets all requirements.
         '''
 
         ready = [False, False]
@@ -275,6 +248,67 @@ class AccretionTracker():
         )
         # mwindtable = z.groupby(['PId', 'birthTag']).sum()
         return mwtable
+
+    @staticmethod
+    def update_mgain_for_split_events(gptable, splittable):
+        '''
+        In case there was splitting between the last snapshot and the current 
+        snapshot, gather information from the splittable and update the rows 
+        where a split happened.
+          - If this is a new born particle, 
+            define mgain = gptable.Mass - splittable.Mass / 2
+          - If this is a splitting particle, 
+            define mgain = mgain + splittable.Mass / 2
+        '''
+
+        # Splitted particle, add back the lost portion
+        df = pd.merge(gptable, ancestors, how='left',
+                      left_on=['PId','snapnum'], right_on=['PId','snapnext'],
+                      suffixes=(None, '_r'))
+        df.Mass_r = df.Mass_r.fillna(0.0) / 2.0
+        df.Mgain = df.Mgain + df.Mass_r
+
+        
+        df_spt = [['parentId','snapnext','Mass']]
+        df_spt['dMass'] = df_spt['Mass'] / 2
+        df_spt.rename(columns={'parentId':'PId'}, inplace=True)
+
+        df = pd.concat([df_new['PId','snapnext','dMass'],
+                        df_spt['PId','snapnext','dMass']], axis=0)
+
+        df_spt = df_spt.groupby(['PId','snapnext'])['dMass'].sum()
+        df_spt = pd.merge(gptable, df_spt, how='inner',
+                          left_on=['PId','snapnum'], right_index=True)
+        df_spt['dMass'] = df_spt['dMass'].fillna(0.0)
+        df_spt['Mgain'] = df_spt['Mgain'] + df_spt['dMass']
+
+        df_new = pd.merge(gptable, df_new[['PId','snapnext','dMass']], how='inner',
+                          left_on=['PId','snapnum'], right_on=['PId','snapnext'])
+        df_new['dMass'] = df_new['dMass'].fillna(0.0)
+        df_new['Mgain'] = df_new['Mass'] - df_new['dMass']
+
+        df = pd.concat([df_new, df_spt], axis=0)
+        
+        # Now select only parentIds that are in the gptable
+        df.drop(['dMass'], axis=1, inplace=True)
+        return df
+
+    @property
+    def model(self):
+        return self._model
+    
+    @property
+    def snapnum(self):
+        return self._snapnum
+
+    @property
+    def gptable(self):
+        return None (self._gptable is None) else self._gptable.data
+
+    @property
+    def pptable(self):
+        return None (self._pptable is None) else self._pptable.data
+
 
 def get_ism_history_for_galaxy(galIdTarget):
     # Look at the current ISM particles of a galaxy

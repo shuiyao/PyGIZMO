@@ -1,35 +1,15 @@
 #+STARTUP: content
 
-
-
 control class: AccretionTracker
-
-Formatting
-  + Check Exception
-  + functions: lower_case_underscore
-  + constants: UPPER_CASE_ALL
-  + Avoid bool == True condition
+  + 
 
 SKID/SO
   + Add some API that submit batch galaxy finder jobs to the queue
 
-PATH:
-tmpdir: boxpart_, halopart_, gptable_, pptable_
-workdir:
-data: phewtable.parquet, inittable.csv, HDF5, gal, so, WINDS
-
 plotlib: Import the plotting libraries in.
-  + Smart legend and colorbar
+  + Smart colorbar
   + Add a particle layer to PhaseDiagram
   + Single panel line plots:
-    - Set resolution range
-    - Set xlim, ylim
-    - Add model
-    - Add data
-    + Overrides:
-      + Galactic stellar mass function
-      + Stellar mass - halo mass function
-      + MZR, fgas
 
 analysis.py:
   + Add halo radial profile calculator

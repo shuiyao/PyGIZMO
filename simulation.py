@@ -62,11 +62,6 @@ class Simulation(object):
             os.mkdir(self._path_workdir)
         self._n_snaps = None
 
-        self._inittable = None
-        self._phewtable = None
-        self._hostmap = None
-        self._splittable = None
-
         self.verbose = verbose
 
         talk(self.__str__(), "normal", self.verbose)        
