@@ -1,85 +1,88 @@
 {
     "gptable":
     {
-	'columns':['PId','snapnum','Mass','haloId','Mgain','relation'],
-        'dtypes': {
-	    'PId':'int64',
-	    'snapnum':'int32',
-            'Mass':'float64',
-            'haloId':'int32',
-            'Mgain':'float64',
-            'relation':'string'
+	"columns":["PId","snapnum","Mass","haloId","Mgain","relation"],
+        "dtypes": {
+	    "PId":"int64",
+	    "snapnum":"int32",
+            "Mass":"float64",
+            "haloId":"int32",
+            "Mgain":"float64",
+            "relation":"string"
         }
     },
     "pptable":
     {
-	'columns': ['PId','haloId','snapnum','Mloss','snapfirst',
-		    'birthId','birthTag'],
-        'dtypes': {
-	    'PId':'int64',
-            'snapnum':'int32',
-            'haloId':'int32',
-            'Mloss':'float64',
-            'snapfirst':'int32',                            
-            'birthId':'int32',
-            'birthTag':'string'
+	"columns": ["PId","haloId","snapnum","Mloss","snapfirst",
+		    "birthId","birthTag"],
+        "dtypes": {
+	    "PId":"int64",
+            "snapnum":"int32",
+            "haloId":"int32",
+            "Mloss":"float64",
+            "snapfirst":"int32",                            
+            "birthId":"int32",
+            "birthTag":"string"
 	}
     },
     "progtable":
     {
-	'columns': ['haloId','snapnum','progId','hostId','logMvir',
-		    'logMsub'],
-        'dtypes': {
-	    'haloId':'int32',
-            'snapnum':'int32',
-            'progId':'int32',
-            'hostId':'int32',
-            'logMvir':'float32',
-            'logMsub':'float32',
-            'Npart':'int32'
+	"columns": ["haloId","snapnum","progId","hostId","logMvir",
+		    "logMsub"],
+        "dtypes": {
+	    "haloId":"int32",
+            "snapnum":"int32",
+            "progId":"int32",
+            "hostId":"int32",
+            "logMvir":"float32",
+            "logMsub":"float32",
+            "Npart":"int32"
 	}
     },
-
-    "phewtable" = {
-	'columns': ['PId','snapnum','Mass','haloId','Mloss'],
-        'dtypes': {
-	    'PId':'int64',
-            'snapnum':'int32',
-            'Mass':'float64',
-            'haloId':'int32',
-            'Mloss':'float64'
+    "phewtable" :
+    {
+	"columns": ["PId","snapnum","Mass","haloId","Mloss"],
+        "dtypes": {
+	    "PId":"int64",
+            "snapnum":"int32",
+            "Mass":"float64",
+            "haloId":"int32",
+            "Mloss":"float64"
         }
     },
-    "inittable" = {
-	'columns': ['PId','snapfirst','minit','birthId','snaplast',
-		    'mlast'],
-        'dtypes': {
-	    'PId':'int64',
-            'snapfirst':'int32',
-            'minit':'float64',
-            'birthId':'int32',
-            'snaplast':'int32',
-            'mlast':'float64'
+    "inittable" :
+    {
+	"columns": ["PId","snapfirst","minit","birthId","snaplast",
+		    "mlast"],
+        "dtypes": {
+	    "PId":"int64",
+            "snapfirst":"int32",
+            "minit":"float64",
+            "birthId":"int32",
+            "snaplast":"int32",
+            "mlast":"float64"
 	}
     },
-    "splittable" = {
-	'columns': ['PId','parentId','Mass','atime','snapnext',
-		    'parentGen'],
-        'dtypes':{
-	    'PId':'int64',
-            'parentId':'int64',
-            'Mass':'float64',
-            'atime':'float32',
-            'snapnext':'int32',
-            'parentGen':'int32'
+    "splittable" :
+    {
+	"columns": ["PId","parentId","Mass","atime","snapnext",
+		    "parentGen"],
+        "dtypes":{
+	    "PId":"int64",
+            "parentId":"int64",
+            "Mass":"float64",
+            "atime":"float32",
+            "snapnext":"int32",
+            "parentGen":"int32"
 	}
     },
-    "hosttable" = {
-	'columns': ['snapnum','haloId','hostId'],
-        'dtypes':{
-	    'snapnum':'int32',
-            'haloId':'int32',
-            'hostId':'int32'
+    "hosttable" :
+    {
+	"columns": ["snapnum","haloId","hostId"],
+        "dtypes":{
+	    "snapnum":"int32",
+            "haloId":"int32",
+            "hostId":"int32"
 	}
     }
 }

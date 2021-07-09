@@ -10,6 +10,8 @@ import pandas as pd
 from tqdm import tqdm
 import os
 
+from derivedtables import ProgTable
+
 schema_progtable = {'columns':['haloId','snapnum','progId','hostId','logMvir','logMsub'],
                     'dtypes':{'haloId':'int32',
                               'snapnum':'int32',

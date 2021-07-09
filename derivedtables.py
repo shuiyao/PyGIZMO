@@ -1,7 +1,16 @@
 import abc
 from datetime import datetime
 from config import SimConfig
+from simlog import SimLog
+import simulation
+import snapshot
+
+from tqdm import tqdm
+
+import galaxy
+
 import utils
+from utils import *
 
 class ValidateRuleExisted():
     '''
@@ -58,8 +67,9 @@ class DerivedTable(abc.ABC):
     Interface for derived tables.
     '''
     
-    def __init__(self, model):
+    def __init__(self, model, cfg=SimConfig()):
         self._model = model
+        self._cfg = cfg
         self._log = SimLog(model)
         self.data = None
         self._path_out = ""
@@ -80,9 +90,9 @@ class DerivedTable(abc.ABC):
     def validate_table(self):
         pass
 
-    @abc.abstractmethod
-    def delete_table(self):
-        pass
+    # @abc.abstractmethod
+    # def delete_table(self):
+    #     pass
 
     @abc.abstractmethod
     def save_table(self):
@@ -93,20 +103,16 @@ class DerivedTable(abc.ABC):
         pass
 
     @abc.abstractmethod
-    def update_log(self):
-        pass
-
-    @abc.abstractmethod
-    def data(self):
+    def _update_log(self):
         pass
 
     def set_param(self, key, value):
         self._pars[key] = value
 
     @staticmethod
-    def load_schema(self, class_string):
+    def load_schema(class_string):
         schema = utils.load_default_schema(
-            SimConfig.get('Schema', 'derivedtables'))
+            SimConfig().get('Schema', 'derivedtables'))
         return schema[class_string]
 
     @property
@@ -120,8 +126,10 @@ class DerivedTable(abc.ABC):
 class TemporaryTable(DerivedTable):
 
     def __init__(self, model, snapnum, galIdTarget):
+        super(TemporaryTable, self).__init__(model)
         self._model = model
         self._snapnum = snapnum
+        self._simulation = Simulation(model)
         self._galId = galIdTarget
         self._path_out = self._simulation._path_tmpdir
         self._fformat = "parquet"
@@ -129,8 +137,8 @@ class TemporaryTable(DerivedTable):
         self._schema = {}
 
         # Set default filename
-        self.filename("")
-        self._path_table = get_path()
+        self.filename = ""
+        self._path_table = self.get_path()
         self._pars = {
             'snapnum': snapnum,
             'galId': galIdTarget,
@@ -144,10 +152,10 @@ class TemporaryTable(DerivedTable):
         '''
         pass
 
-    def update_log(self):
+    def _update_log(self):
         self._log.write_event(self.filename, self._pars)
 
-    def load_table(self, vadidate=True, spark=None, verbose='talky'):
+    def load_table(self, validate=True, spark=None, verbose='talky'):
         '''
         Load existing (temporary) table.
 
@@ -171,16 +179,16 @@ class TemporaryTable(DerivedTable):
             talk("Loading {} from file.".format(self.clsstr), 'quiet')
 
             if(spark is None): 
-                if(self._pars['format'].lower() == "parquet"):
+                if(self._pars['fformat'].lower() == "parquet"):
                     self.data = pd.read_parquet(self._path_table)
-                elif(self._pars['format'].lower() == "csv"):
+                elif(self._pars['fformat'].lower() == "csv"):
                     self.data = pd.read_csv(self._path_table,
                                             dtype=self._schema['dtypes'])
                 return True
-            else
-                if(self._pars['format'].lower() == "parquet"):
+            else:
+                if(self._pars['fformat'].lower() == "parquet"):
                     self.data = spark.read.parquet(self._path_table)
-                elif(self._pars['format'].lower() == "csv"):
+                elif(self._pars['fformat'].lower() == "csv"):
                     self.data = spark.read.csv(self._path_table)
             
         else:
@@ -244,7 +252,7 @@ class TemporaryTable(DerivedTable):
             
             self.set_param('file_type', 'dir')
             
-        self.update_log()
+        self._update_log()
 
     def data(self):
         return self.data
@@ -253,9 +261,15 @@ class TemporaryTable(DerivedTable):
         '''     
         Get the full path to the table.
         '''
-        fname = self.filename()
+        fname = self.filename
         path_table = os.path.join(self._path_out, fname)
         return path_table
+
+    def _initialize(self):
+        self.filename = ""
+        self._schema = self.load_schema(self._clsstr)
+        self._path_table = self.get_path()
+        self._pars['path'] = self._path_table
 
     @property
     def filename(self):
@@ -280,22 +294,23 @@ class TemporaryTable(DerivedTable):
 class PermanentTable(DerivedTable):
 
     def __init__(self, model):
+        super(PermanentTable, self).__init__(model)        
         self._model = model
+        self._simulation = simulation.Simulation(model)
         self._path_out = self._simulation._path_workdir
         self._fformat = "csv"
         self._clsstr = ""
         self._schema = {}
 
         # Set default filename
-        self.filename("")
-        self._path_table = get_path()
+        self.filename = None
+        self._path_table = None
         self._pars = {
-            'snapnum': snapnum,
             'fformat': self._fformat,
             'file_type': "file"
         }
 
-    def _parse_keywords(**kwargs):
+    def _parse_keywords(self, **kwargs):
         '''
         Parse keywords specific to PermanentTable
         '''
@@ -310,24 +325,24 @@ class PermanentTable(DerivedTable):
         '''
         pass
 
-    def update_log(self):
+    def _update_log(self):
         self._log.write_event(self.filename, self._pars)
 
-    def load_table(self, vadidate=True, verbose='talky'):
+    def load_table(self, validate=True, verbose='talky'):
         '''
         Load existing table.
         '''
 
         if(validate and self.validate_table(self.validate_rule)):
             talk("Loading {} from file.".format(self.clsstr), 'quiet')
-            if(self._pars['format'].lower()) == "parquet":
+            if(self._pars['fformat'].lower()) == "parquet":
                 self.data = pd.read_parquet(self._path_table)
-            elif(self._pars['format'].lower()) == "csv":
+            elif(self._pars['fformat'].lower()) == "csv":
                 self.data = pd.read_csv(self._path_table,
                                         dtype=self._schema['dtypes'])
             return True
         else:
-            talk("{} not found. Use build_table() to build new table.".format(path_table), verbose)
+            talk("{} not found. Use build_table() to build new table.".format(self._path_table), verbose)
             return False
 
     def validate_table(self, validate_rule, verbose="normal"):
@@ -379,15 +394,21 @@ class PermanentTable(DerivedTable):
         if(spark is not None):
             self.set_param('file_type', 'dir')
 
-        self.update_log()
+        self._update_log()
 
     def get_path(self):
         '''     
         Get the full path to the table.
         '''
-        fname = self.filename()
+        fname = self.filename
         path_table = os.path.join(self._path_out, fname)
         return path_table
+
+    def _initialize(self):
+        self.filename = ""
+        self._schema = self.load_schema(self._clsstr)
+        self._path_table = self.get_path()
+        self._pars['path'] = self._path_table
 
     @property
     def filename(self):
@@ -411,11 +432,7 @@ class GasPartTable(TemporaryTable):
     def __init__(self, model, snapnum, galIdTarget, **kwargs):
         super(GasPartTable, self).__init__(model, snapnum, galIdTarget)
         self._clsstr = "gptable"
-        self._schema = self.load_schema(self._clsstr)
-        self._path_table = get_path()
-
-        self._pars['path'] = self._path_table
-
+        self._initialize()
         self._parse_keywords(**kwargs)
 
         # Must match the following parameters to validate an existinig table
@@ -426,7 +443,7 @@ class GasPartTable(TemporaryTable):
             fformat=self._pars.get('fformat')
         )
         
-    def _parse_keywords(**kwargs):
+    def _parse_keywords(self, **kwargs):
         '''
         Parse keywords specific to GasPartTable.
         '''
@@ -676,10 +693,7 @@ class PhewPartTable(TemporaryTable):
     def __init__(self, model, snapnum, galIdTarget, **kwargs):
         super(PhEWPartTable, self).__init__(model, snapnum, galIdTarget)
         self._clsstr = "pptable"
-        self._schema = self.load_schema(self._clsstr)
-        self._path_table = get_path()
-
-        self._pars['path'] = self._path_table
+        self._initialize()
 
         self._parse_keywords(kwargs)
 
@@ -706,7 +720,7 @@ class PhewPartTable(TemporaryTable):
                    gptable = gptable,
                    include_stars=gptable._pars.get('include_stars'))
 
-    def _parse_keywords(**kwargs):
+    def _parse_keywords(self, **kwargs):
         '''
         Parse keywords specific to PhEWPartTable.
         '''
@@ -824,16 +838,15 @@ class ProgTable(PermanentTable):
         super(ProgTable, self).__init__(model)
         self._clsstr = "progtable"
         self._snapnum = snapnum
-        self._schema = self.load_schema(self._clsstr)
-        self._path_table = get_path()
+        self._initialize()
 
-        self._pars['path'] = self._path_table
+        self._pars['snapnum'] = self._snapnum
 
-        self._parse_keywords(kwargs)
+        self._parse_keywords(**kwargs)
 
         # Must match the following parameters to validate an existinig table
         self.validate_rule = ValidateRuleExisted(
-            snapnum=self.snapnum,
+            snapnum=self._snapnum,
             fformat=self._pars.get('fformat')
         )
 
@@ -880,14 +893,15 @@ class ProgTable(PermanentTable):
 
         talk("Finding progenitors for halos in snapshot_{:03d}".format(self.snapnum), 'normal')
         progtable = None
+        snap = snapshot.Snapshot(self.model, self.snapnum)
         for snapnum in tqdm(range(0, self.snapnum+1), desc='snapnum', ascii=True):
-            snapcur = snapshot.Snapshot(self.model, snapnum)
+            snapcur = snapshot.Snapshot(self.model, snapnum, verbose='talky')
             if(load_halo_mass):
                 snapcur.load_halos(['Mvir', 'Msub'])
             else:
                 snapcur.load_halos(['Npart'])            
             haloId2hostId = galaxy.read_sopar(snapcur._path_sopar, as_dict=True)
-            haloId2progId = find_progenitors(snap, snapcur)
+            haloId2progId = self.find_progenitors(snap, snapcur)
             haloId2hostId[0] = 0
             df = pd.DataFrame(index=haloId2progId.keys())
             df['snapnum'] = snapnum
@@ -900,7 +914,7 @@ class ProgTable(PermanentTable):
             progtable.Npart = progtable.Npart.fillna(0).astype('int')
         self.data = progtable
 
-    def find_progenitors(snap, snap_early):
+    def find_progenitors(self, snap, snap_early):
         '''
         For each halo from a snapshot, find its main progenitor in some early 
         snapshot. The main progenitor of a halo is defined as the halo that hosts 
@@ -948,6 +962,19 @@ class ProgTable(PermanentTable):
                 haloId2progId[i] = 0
         return haloId2progId
 
+    @property
+    def snapnum(self):
+        return self._snapnum
+
+    @property
+    def filename(self):
+        return self._filename
+
+    @filename.setter
+    def filename(self, name):
+        if(name == ""):
+            name = "{}_{:03d}.{}".format(self.clsstr, self._snapnum, self._fformat)
+        self._filename = name
 
 # ----------------------------------------------------------------
 #                      Class: SplitTable
@@ -958,16 +985,14 @@ class SplitTable(PermanentTable):
     Permanent table that contains the splitting events.
     '''
     
-    def __init__(self, model, snapnum, **kwargs):
-        super(ProgTable, self).__init__(model)
+    def __init__(self, model, **kwargs):
+        super(SplitTable, self).__init__(model)
+        self._path_out = self._simulation._path_data
+        
         self._clsstr = "splittable"
-        self._snapnum = snapnum
-        self._schema = self.load_schema(self._clsstr)
-        self._path_table = get_path()
+        self._initialize()
 
-        self._pars['path'] = self._path_table
-
-        self._parse_keywords(kwargs)
+        self._parse_keywords(**kwargs)
 
         # Must match the following parameters to validate an existinig table
         self.validate_rule = ValidateRuleExisted(
@@ -1022,19 +1047,15 @@ class SplitTable(PermanentTable):
 
 class HostTable(PermanentTable):
     '''
-    Permanent table that contains the splitting events.
+    Permanent table that defines the host halos.
     '''
     
-    def __init__(self, model, snapnum, **kwargs):
+    def __init__(self, model, **kwargs):
         super(HostTable, self).__init__(model)
         self._clsstr = "hosttable"
-        self._snapnum = snapnum
-        self._schema = self.load_schema(self._clsstr)
-        self._path_table = get_path()
+        self._initialize()
 
-        self._pars['path'] = self._path_table
-
-        self._parse_keywords(kwargs)
+        self._parse_keywords(**kwargs)
 
         # Must match the following parameters to validate an existinig table
         self.validate_rule = ValidateRuleExisted(
@@ -1052,8 +1073,9 @@ class HostTable(PermanentTable):
         hosttable: pandas.DataFrame
             Columns: snapnum*, haloId*, hostId
         '''
-        # TODO
-        hosttable = ProgTracker.build_haloId_hostId_map()
+        from progen import ProgTracker
+        
+        hosttable = ProgTracker.build_haloId_hostId_map(self._simulation)
         self.data = hosttable
 
 
@@ -1066,16 +1088,14 @@ class InitTable(PermanentTable):
     Permanent table that contains the splitting events.
     '''
     
-    def __init__(self, model, snapnum, **kwargs):
+    def __init__(self, model, **kwargs):
         super(InitTable, self).__init__(model)
+        self._path_out = self._simulation._path_data
+        
         self._clsstr = "inittable"
-        self._snapnum = snapnum
-        self._schema = self.load_schema(self._clsstr)
-        self._path_table = get_path()
+        self._initialize()        
 
-        self._pars['path'] = self._path_table
-
-        self._parse_keywords(kwargs)
+        self._parse_keywords(**kwargs)
 
         # Must match the following parameters to validate an existinig table
         self.validate_rule = ValidateRuleExisted(
@@ -1152,20 +1172,18 @@ class InitTable(PermanentTable):
 
 class PhEWTable(PermanentTable):
     '''
-    Permanent table that contains the splitting events.
+    Permanent table that contains all PhEW particles.
     '''
     
-    def __init__(self, model, snapnum, **kwargs):
+    def __init__(self, model, **kwargs):
         super(PhEWTable, self).__init__(model)
-        self._clsstr = "phewtable"
-        self._snapnum = snapnum
-        self._schema = self.load_schema(self._clsstr)
-        self._path_table = get_path()
+        self._path_out = self._simulation._path_data
         self._fformat = "parquet"
 
-        self._pars['path'] = self._path_table
+        self._clsstr = "phewtable"
+        self._initialize()        
 
-        self._parse_keywords(kwargs)
+        self._parse_keywords(**kwargs)
 
         # Must match the following parameters to validate an existinig table
         self.validate_rule = ValidateRuleExisted(
@@ -1173,7 +1191,7 @@ class PhEWTable(PermanentTable):
             fformat=self._pars.get('fformat')
         )
 
-    def _parse_keywords(**kwargs):
+    def _parse_keywords(self, **kwargs):
         '''
         Parse keywords specific to PermanentTable
         '''
@@ -1320,7 +1338,7 @@ class PhEWTable(PermanentTable):
         if(self._fformat == "parquet"):
             schemaParquet = utils.read_parquet_schema(self._path_table)
             columns = set(schemaParquet.column)
-        elif(self._fformat == "csv")
+        elif(self._fformat == "csv"):
             columns = self.data.columns
         
         if(self.validate_table(ValidateRuleWithField('Mloss', columns))):
@@ -1342,3 +1360,10 @@ class PhEWTable(PermanentTable):
             phewtable = phewtable.withColumn('Mloss', phewtable.Mass - sF.lag('Mass',1).over(w)).na.fill(0.0)
             self.data = phewtable
             self.save_table(spark=spark)
+
+if(__name__ == "__main__"):
+    hosttable = HostTable('l25n144-test')
+    inittable = InitTable('l25n144-test')
+    progtable = ProgTable('l25n144-test', snapnum=108)
+    phewtable = PhEWTable('l25n144-test')
+    splittable = SplitTable('l25n144-test')    

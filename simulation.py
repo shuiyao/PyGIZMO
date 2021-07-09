@@ -20,36 +20,38 @@ from pyarrow.parquet import ParquetFile
 
 # from sparkutils import *
 
-schema_phewtable = {'columns':['PId','snapnum','Mass','haloId','Mloss'],
-                    'dtypes':{'PId':'int64',
-                              'snapnum':'int32',
-                              'Mass':'float64',
-                              'haloId':'int32',
-                              'Mloss':'float64'
-                    }
-}
-schema_inittable = {'columns':['PId','snapfirst','minit','birthId',
-                               'snaplast','mlast'],
-                    'dtypes':{'PId':'int64',
-                              'snapfirst':'int32',
-                              'minit':'float64',
-                              'birthId':'int32',
-                              'snaplast':'int32',
-                              'mlast':'float64'}
-}
-schema_splittable = {'columns':['PId','parentId','Mass','atime','snapnext','parentGen'],
-                    'dtypes':{'PId':'int64',
-                              'parentId':'int64',
-                              'Mass':'float64',
-                              'atime':'float32',
-                              'snapnext':'int32',
-                              'parentGen':'int32'}
-}
-
-model = "l25n144-test"
-
-class Simulation():
-    def __init__(self, model, config=SimConfig()):
+class Simulation(object):
+    '''
+    Top level APIs for simulation.
+    
+    Example
+    -------
+    >>> model = "l25n144-test"
+    >>> sim = Simulation(model)
+    Simulation: l25n144-test
+    >>> print(f"Number of snapshots: {sim.nsnaps}")
+    Number of snapshots: 109
+    >>> sim.load_timeinfo_for_snapshots()
+               a      zred
+    0    0.03226  29.99997
+    1    0.04762  20.00002
+    ..       ...       ...
+    107  0.97561   0.02500
+    108  1.00000   0.00000
+    
+    [109 rows x 2 columns]
+    '''
+    
+    def __init__(self, model, config=SimConfig(), verbose=None):
+        '''
+        Parameters
+        ----------
+        model: String. 
+            The name of the simulation.
+        config: SimConfig. Default=SimConfig()
+            The configuration file to load. By default, load the pygizmo.cfg
+        '''
+        
         self._model = model
         self._cfg = config
         self._path_data = os.path.join(self._cfg.get('Paths', 'data'), model)
@@ -63,7 +65,11 @@ class Simulation():
         self._inittable = None
         self._phewtable = None
         self._hostmap = None
-        self._splittable = None        
+        self._splittable = None
+
+        self.verbose = verbose
+
+        talk(self.__str__(), "normal", self.verbose)        
 
     def __str__(self):
         return f"Simulation: {self._model}"
@@ -96,5 +102,12 @@ class Simulation():
         else:
             return self._n_snaps
 
+def _test(model=None):
+    model = "l25n144-test" if (model is None) else model
+    sim = Simulation(model)
+    print(f"Number of snapshots: {sim.nsnaps}")
+    print(sim.load_timeinfo_for_snapshots())
 
+if(__name__ == "__main__"):
+    _test()
 

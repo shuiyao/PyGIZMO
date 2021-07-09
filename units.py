@@ -91,6 +91,7 @@ class UnitsDefault(Units):
         self.v = float(system_units['SystemVelocity'])      # 1 km/s
         self.u = float(system_units['SystemEnergy'])        # 10000 K (XH=0.76)
         self.b = float(system_units['SystemMagneticField']) # 1 Gauss
+        self._update_units()
 
 class UnitsComoving(Units):
     def __init__(self, hubble_param, a=None, z=None, config=SimConfig()):

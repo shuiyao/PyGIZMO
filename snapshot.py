@@ -18,11 +18,46 @@ from utils import talk
 
 import progen
 
-path_schema = "data/HDF5schema.csv"
-hdf5schema = pd.read_csv(path_schema, header=0).set_index('FieldName')
 
 class Snapshot(object):
-    
+    '''
+    APIs on the snapshot level. 
+
+    A snapshot is the main output from the simulation at a time-step. It 
+    contains metadata of the simulation as well as attributes for each 
+    individual particle at the time of the snapshot.
+
+    Example
+    -------
+    >>> model = "l25n144-test"
+    >>> snap = Snapshot(model, 98)
+    Snapshot: l25n144-test, snapnum: 108
+    >>> snap.redshift
+    0.2500000073365194
+    >>. snap.cosmology
+    {'Omega0': 0.3, 'OmegaLambda': 0.7, 'HubbleParam': 0.7}
+    >>> snap.get_units('tipsy', cgs=False).get('length')
+    35714.285714285725    
+    >>> snap.ngals
+    1469
+    >>> snap.ngas
+    2561261
+    >>> snap.select_galaxies_by_mass_percentiles(0.98, 0.985)    
+           Npart   logMstar    logMgal
+    galId                             
+    48       728  10.860389  10.981041
+    95       722  10.888107  11.002301
+    589      673  10.881828  10.962551
+    827      690  10.871061  10.991914
+    841      727  10.918854  11.011083
+    889      676  10.914965  10.981414
+    936      653  10.907985  10.954995
+    >>> snap.load_gas_particles(['PId','Mass','galId','Tmax'])
+    >>> snap.gp.columns
+    Index(['PId', 'Mass', 'galId', 'Tmax'], dtype='object')
+    >>> snap.load_gas_particles(['PId','logT'])
+    Index(['PId', 'U', 'Ne', 'Y', 'logT'], dtype='object')
+    '''
     def __init__(self, model, snapnum, verbose=None, config=SimConfig()):
         self._model = model
         self._snapnum = snapnum
@@ -45,8 +80,10 @@ class Snapshot(object):
         self._path_stat = os.path.join(self._path_data, "gal_z{:03d}.stat".format(snapnum))
         self._path_sogrp = os.path.join(self._path_data, "so_z{:03d}.sogrp".format(snapnum))
         self._path_sovcirc = os.path.join(self._path_data, "so_z{:03d}.sovcirc".format(snapnum))
-        self._path_sopar = os.path.join(self._path_data, "so_z{:03d}.par".format(snapnum))        
+        self._path_sopar = os.path.join(self._path_data, "so_z{:03d}.par".format(snapnum))
 
+        self._hdf5schema = pd.read_csv(self._cfg.get('Schema', 'HDF5'), header=0)\
+                             .set_index('FieldName')
         with h5py.File(self._path_hdf5, "r") as hf:
             attrs = hf['Header'].attrs
             self._header_keys = set(attrs.keys())
@@ -131,7 +168,7 @@ class Snapshot(object):
         fields_todrop = fields_exist ^ (fields & fields_exist)
         # Only keep the fields that is not existed
         fields = fields ^ (fields & fields_exist)
-        fields_hdf5 = hdf5schema.index.intersection(fields)
+        fields_hdf5 = self._hdf5schema.index.intersection(fields)
         fields_pos = fields & set(['x', 'y', 'z'])        
         elements = self._cfg.get('Simulation','elements').split(sep=',')
         fields_metals = fields & set(elements)
@@ -143,6 +180,37 @@ class Snapshot(object):
                 'metals':fields_metals,
                 'derived':fields_derived,
                 'todrop':fields_todrop}
+
+    def get_units(self, system='gizmo', cgs=False):
+        '''
+        Get the unit system applied to this snapshot. The values depend on
+        both the redshift of the snapshot and the cosmological parameters.
+
+        Parameter
+        ---------
+        system: String. Default='gizmo'
+            Must be either gizmo or tipsy.
+        cgs: boolean. Default=False
+            Display the units in cgs system? If not, display in default system.
+        
+        Return
+        ------
+        units_: Dict.
+            The unit of various quantities in c.g.s units.
+        '''
+        assert(system in ['gizmo', 'tipsy']), "system must be either 'gizmo' or 'tipsy'"
+        if(system == "gizmo"):
+            units_ = self._units_gizmo.units.copy()
+        if(system == "tipsy"):
+            units_ = self._units_tipsy.units.copy()
+
+        if(cgs):
+            return units_
+        else:
+            units_sys = units.UnitsDefault().units
+            for k in units_.keys():
+                units_[k] = units_[k] / units_sys[k]
+            return units_
 
     def load_gas_particles(self, fields, drop=True):
         '''
@@ -232,20 +300,20 @@ class Snapshot(object):
                 talk('Ignore non-existent PartType{}'.format(ptype), 'quiet')
                 return
             for field in fields_hdf5:
-                hdf5field = hdf5schema.loc[field].HDF5Field
-                dtype = hdf5schema.loc[field].PandasType
+                hdf5field = self._hdf5schema.loc[field].HDF5Field
+                dtype = self._hdf5schema.loc[field].PandasType
                 if(hdf5field not in hdf5part):
                     raise RuntimeError("{} is not found in the HDF5 file.".format(hdf5field))
                 cols[field] = hdf5part[hdf5field][:].astype(dtype)
             # Now extract the metal field
-            hdf5field = hdf5schema.loc['Metals'].HDF5Field
-            dtype = hdf5schema.loc['Metals'].PandasType
+            hdf5field = self._hdf5schema.loc['Metals'].HDF5Field
+            dtype = self._hdf5schema.loc['Metals'].PandasType
             for field in fields_metals:
                 cols[field] = hdf5part[hdf5field][:,elements.index(field)].astype(dtype)
             # Now extract the pos field
             posidx = {'x':0, 'y':1, 'z':2}
-            hdf5field = hdf5schema.loc['Pos'].HDF5Field
-            dtype = hdf5schema.loc['Pos'].PandasType
+            hdf5field = self._hdf5schema.loc['Pos'].HDF5Field
+            dtype = self._hdf5schema.loc['Pos'].PandasType
             for field in fields_pos:
                 cols[field] = hdf5part[hdf5field][:,posidx[field]].astype(dtype)
         return pd.DataFrame(cols)
@@ -582,19 +650,32 @@ class Snapshot(object):
         else:
             return gals
     
-    
-'''
->>> snap = Snapshot("l12n144-phew-movie-200", 100)
->>> snap.load_gas_particles(['PId','Mass'])
->>> snap.gp.columns
-Index(['PId', 'Mass'], dtype='object')
->>> snap.load_gas_particles(['PId','Tmax'])
->>> snap.gp.columns
-Index(['PId', 'Tmax'], dtype='object')
->>> snap.load_gas_particles(['Ne'], drop=False)
->>> snap.gp.columns
-Index(['PId', 'Tmax', 'Ne'], dtype='object')
-'''
+def _test(model=None):
+    model = "l25n144-test" if (model is None) else model
+    snap = Snapshot(model, 98)
 
-model = "l25n144-test"
-snap = Snapshot(model, 108)
+    # Check cosmology and redshift
+    snap.cosmology
+    print(f"redshift = {snap.redshift}")
+
+    # Check internal units:
+    unit_l = snap.get_units('tipsy', cgs=False).get('length')
+    print(f"Unit Length in TIPSY format: {unit_l}")
+
+    print(f"Number of gas particles: {snap.ngas}")
+
+    print(f"Number of galaxies: {snap.ngals}")
+
+    # Find the galaxies whose mass is within the top 1.5% to2%
+    print(snap.select_galaxies_by_mass_percentiles(0.98, 0.985))
+
+    # load PId, Mass, Tmax from HDF5 snapshot file
+    # load galId from galaxy CSV file
+    snap.load_gas_particles(['PId','Mass','galId','Tmax'])
+    print(snap.gp.columns)
+    # derive logT from U, Ne, Y fields
+    snap.load_gas_particles(['PId','logT'])
+    print(snap.gp.columns)
+    
+if(__name__ == "__main__"):
+    _test(model)
