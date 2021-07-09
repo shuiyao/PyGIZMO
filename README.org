@@ -297,7 +297,7 @@ Like in a DensityMap, PhaseDiagram allows a particle layer and a ion contour lay
 
 Draw an overall view of the configuration of various types of particles in a selected halo, and two additional views that zoom in on the center of the halo.
 
-One can make a movie (*sample*) showing the evolution of the halo over time by identifying and showing its progenitors in previous snapshots.
+One can make a movie (e.g., [[https://vimeo.com/446943530][Evolution of a galaxy]]) showing the evolution of the halo over time by identifying and showing its progenitors in previous snapshots.
 
 ** Class diagram
 #+CAPTION: Class Diagram for the Plotting Module
@@ -355,7 +355,7 @@ for i, z in enumerate(redshifts):
 
 Since some of the computations for derived properties of galaxy and halo properties can be expensive, PyGIZMO automatically saves the results into tabular files at designated locations and keep tracks of any expensive operation that has already been performed on a simulation basis. These results can then be loaded into other modules without having to be re-computed.
 
-PyGIZMO implements this idea using two classes, /DerivedTable/ and /SimLog/, for each simulation/model. Whenever a DerivedTable has been computed and saved, an entry is written into the SimLog with detailed information on how the table was generated (e.g., the parameters that was passed to the ~DerivedTable.build_table() method~). At any time when a particular result is needed, ~DerivedTable.load_table()~ will check the SimLog to see if the table has already been created with the same parameters. If so, unless the keyword overwrite is set to True, the existing result will be loaded. 
+PyGIZMO implements this idea using two classes, /DerivedTable/ and /SimLog/, for each simulation/model. Whenever a DerivedTable has been computed and saved, an entry is written into the SimLog with detailed information on how the table was generated (e.g., the parameters that was passed to the ~DerivedTable.build_table()~ method). At any time when a particular result is needed, ~DerivedTable.load_table()~ will check the SimLog to see if the table has already been created with the same parameters. If so, unless the keyword overwrite is set to True, the existing result will be loaded. 
 
 The DerivedTable has two sub-classes, PermanentTable and TemporaryTable. The permanent tables are often results that are deterministic and often used, such as the galactic stellar mass functions, merger trees, and the many simulation-level inputs to the [[sec:accretionTracker][accretion tracking engine]]. The temporary tables often have limited usage, are intermediate outputs of a long data pipeline, or depend on user defined parameters.
 

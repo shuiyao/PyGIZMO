@@ -113,6 +113,9 @@ class DerivedTable(abc.ABC):
     def model(self):
         return self._model
 
+    @property
+    def clsstr(self):
+        return self._clsstr
 
 class TemporaryTable(DerivedTable):
 
@@ -144,21 +147,44 @@ class TemporaryTable(DerivedTable):
     def update_log(self):
         self._log.write_event(self.filename, self._pars)
 
-    def load_table(self, vadidate=True, verbose='talky'):
+    def load_table(self, vadidate=True, spark=None, verbose='talky'):
         '''
-        Load existing table.
+        Load existing (temporary) table.
+
+        Parameters
+        ----------
+        validate: Boolean. Default=True
+            If True, validate with the log file to verify that the saved table
+            was created with the same parameters.
+        spark: SparkSession. Default=None
+            If None, return the table as a pandas dataframe.
+            Otherwise, return the table as a Spark dataframe.
+        verbose: String. Default='talky'
+            The verbose level.
+
+        Return
+        ------
+        Boolean.
         '''
 
         if(validate and self.validate_table(self.validate_rule)):
             talk("Loading {} from file.".format(self.clsstr), 'quiet')
-            if(self._pars['format'].lower()) == "parquet":
-                self.data = pd.read_parquet(self._path_table)
-            elif(self._pars['format'].lower()) == "csv":
-                self.data = pd.read_csv(self._path_table,
-                                        dtype=self._schema['dtypes'])
-            return True
+
+            if(spark is None): 
+                if(self._pars['format'].lower() == "parquet"):
+                    self.data = pd.read_parquet(self._path_table)
+                elif(self._pars['format'].lower() == "csv"):
+                    self.data = pd.read_csv(self._path_table,
+                                            dtype=self._schema['dtypes'])
+                return True
+            else
+                if(self._pars['format'].lower() == "parquet"):
+                    self.data = spark.read.parquet(self._path_table)
+                elif(self._pars['format'].lower() == "csv"):
+                    self.data = spark.read.csv(self._path_table)
+            
         else:
-            talk("{} not found. Use build_table() to build new table.".format(path_table), verbose)
+            talk("{} not found. Use build_table() to build new table.".format(self._path_table), verbose)
             return False
 
     def validate_table(self, validate_rule, verbose="normal"):
@@ -174,23 +200,50 @@ class TemporaryTable(DerivedTable):
 
         return validate_rule.validate(event, verbose)
 
-    def save_table(self):
+    def save_table(self, spark=None):
         '''
         TemporaryTable.save_table()
         Save the created/updated table and update log file.
+
+        Parameters
+        ----------
+        spark: SparkSession. Default=None
+            If None, do not use spark
         '''
 
         talk("Saving {} as {}".format(self.clsstr, self._path_table), 'quiet')
 
-        if(self._pars.get('fformat') == "parquet"):
-            schema = utils.pyarrow_read_schema(self._schema)
-            tab = pa.Table.from_pandas(self.data, schema=schema,
-                                       preserve_index=True)
-            pq.write_table(tab, self._path_table)
-        elif(self._pars.get('fformat') == "csv"):
-            self.data.reset_index().to_csv(self._path_table, index=False,
-                                           columns=self._schema['columns'])
-
+        if(spark is None):
+            if(isinstance(self.data, pyspark.sql.dataframe.DataFrame)):
+                try:
+                    self.data.toPandas()
+                except:
+                    raise RuntimeError("Can not convert Spark DataFrame to Pandas Dataframe.")
+            
+            if(self._pars.get('fformat') == "parquet"):
+                schema = utils.pyarrow_read_schema(self._schema)
+                tab = pa.Table.from_pandas(self.data, schema=schema,
+                                           preserve_index=True)
+                pq.write_table(tab, self._path_table)
+            elif(self._pars.get('fformat') == "csv"):
+                self.data.reset_index().to_csv(self._path_table, index=False,
+                                               columns=self._schema['columns'])
+            self.set_param('file_type', 'file')
+        else: # use Spark
+            if(isinstance(self.data, pd.DataFrame)):
+                try: 
+                    self.data = spark.createDataFrame(self.data)
+                except:
+                    warnings.warn("Can not convert Pandas DataFrame to Spark Dataframe. Write without spark instead.")
+                self.save_table(spark=None)
+                
+            if(self._pars.get('fformat') == "parquet"):
+                self.data.write.mode("overwrite").parquet(self._path_table)
+            elif(self._pars.get('fformat') == "csv"):
+                self.data.write.mode("overwrite").csv(self._path_table)
+            
+            self.set_param('file_type', 'dir')
+            
         self.update_log()
 
     def data(self):
@@ -297,7 +350,7 @@ class PermanentTable(DerivedTable):
 
         Parameters
         ----------
-        spark: SparkSession or None
+        spark: SparkSession. Default=None
             if None, do not use spark.
         '''
 
@@ -670,7 +723,7 @@ class PhewPartTable(TemporaryTable):
         gptable.load_table()
         self.gptable = gptable
 
-    def build_table(self, inittable, phewtable, overwrite=False):
+    def build_table(self, inittable, phewtable, spark=None, overwrite=False):
         '''
         Build or load a temporary table that stores all the necessary attributes 
         of selected PhEW particles that can be queried by the accretion tracking 
@@ -688,6 +741,8 @@ class PhewPartTable(TemporaryTable):
             All PhEW particles in any snapshot of the simulation
             The function return is a subset of it
             Created from Simulation.build_phewtable_from_simulation()
+        spark: SparkSession. Default=None
+            if None, do not use spark.
         overwrite: boolean. Default=False
             If True, rebuild the table even if a file exists.
 
@@ -701,7 +756,7 @@ class PhewPartTable(TemporaryTable):
 
         if(overwrite==False and self.validate_table(self.validate_rule)):
             talk("Load existing {}.".format(self.clsstr), 'normal')
-            self.load_table()
+            self.load_table(spark=spark)
             return
         
         assert(self.gptable is not None)
@@ -1146,10 +1201,6 @@ class PhEWTable(PermanentTable):
             A gigantic table containing all PhEW particles in any snapshot.
             Columns: PId*, snapnum, Mass, haloId
             This table will be heavily queried by the accretion tracking engine.
-
-        OutputFiles
-        -----------
-        data/phewtable.parquet
         '''
 
         assert(os.path.exists(self._path_table)), "phewtable.parquet file is not found. Use Simulation.build_phewtable() to create one."

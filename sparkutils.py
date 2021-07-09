@@ -9,6 +9,7 @@ from pyspark.sql.types import *
 import pyspark.sql.functions as sF
 
 spark = SparkSession.builder.appName("PyGIZMO").getOrCreate()
+spark.conf.set("spark.sql.execution.arrow.enabled", "true")
 sc = spark.sparkContext
 sc.setLogLevel('WARN')
 
