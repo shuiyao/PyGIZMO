@@ -10,8 +10,6 @@ import pandas as pd
 from tqdm import tqdm
 import os
 
-from derivedtables import ProgTable
-
 schema_progtable = {'columns':['haloId','snapnum','progId','hostId','logMvir','logMsub'],
                     'dtypes':{'haloId':'int32',
                               'snapnum':'int32',
@@ -106,7 +104,7 @@ class ProgTracker():
         return "IGM"
 
     @staticmethod
-    def compile_halos_hosts(data, fields=['snapnum', 'haloId']):
+    def compile_halo_hosts(data, fields=['snapnum', 'haloId']):
         '''
         Find all unique halos (snapnum, haloId) from a table.
 
@@ -158,14 +156,17 @@ class ProgTracker():
         '''
 
         from progen import ProgTracker
+        from pdb import set_trace
 
-        progsTarget = progtable.loc[progtable.index == self.haloId,
+        progsTarget = progtable.loc[progtable.index == haloIdTarget,
                                     ['snapnum', 'progId', 'hostId']]
         progsTarget.rename(columns={'hostId':'progHost'}, inplace=True)
 
         halos = halos[['snapnum', 'haloId']].set_index(['snapnum', 'haloId'])
 
         # Find the hostId of each halo in its snapshot
+        hostmap = hostmap.set_index(['snapnum', 'haloId'])
+
         halos = halos.join(hostmap, how='left') # (snapnum, haloId) -> hostId
         halos = halos.reset_index()
 

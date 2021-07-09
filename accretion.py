@@ -68,8 +68,22 @@ class AccretionTracker():
 
     Parameters
     ----------
+    model: String.
+        Name of the simulation.
+    snapnum: int
     snap: Class Snapshot.
         The snapshot which to track accretion
+
+    Example
+    -------
+    >>> model = "l25n144-test"    
+    >>> snap = snapshot.Snapshot(model, 108)
+    >>> galIdTarget = 715 # Npart = 28, logMgal = 9.5, within 0.8-0.9 range
+    >>> act = AccretionTracker.from_snapshot(snap)
+    >>> act.initialize()
+    >>> act.build_temporary_tables_for_galaxy(galIdTarget, include_stars=True, rebuild=False)
+    >>> mwtable = act.compute_wind_mass_partition_by_birthtag()
+    >>> mwtable.groupby(['PId','birthTag'])['Mgain'].sum()
     '''
     
     def __init__(self, model, snapnum):
@@ -111,28 +125,30 @@ class AccretionTracker():
         self._phewtable = PhEWTable(self._model)
         self._hosttable = HostTable(self._model)
         self._splittable = SplitTable(self._model)
-        self._progtable = ProgTable(self._model, snapnum=108)
+        self._progtable = ProgTable(self._model, snapnum=self._snapnum,
+                                    load_halo_mass=False)
+
+        if(not self._inittable.load_table()):
+            self._inittable.build_table(overwrite=True)
+            self._inittable.save_table()
 
         try:
             self._phewtable.load_table()
         except:
-            if(not self._inittable.load_table()):
-                self._inittable.build_table(overwrite=True)
-                self._inittable.save_table()
             self._phewtable.build_table(inittable=self._inittable.data)
             self._phewtable.add_field_mloss(spark=spark)
             self._phewtable.save_table(spark=spark)
 
         if(not self._hosttable.load_table()):
-            self._hosttable.build_table()
+            self._hosttable.build_table(overwrite=True)
             self._hosttable.save_table()
 
         if(not self._splittable.load_table()):
-            self._splittable.build_table()
+            self._splittable.build_table(overwrite=True)
             self._splittable.save_table()
 
         if(not self._progtable.load_table()):
-            self._progtable.build_table()
+            self._progtable.build_table(overwrite=True)
             self._progtable.save_table()
 
     def build_temporary_tables_for_galaxy(self, galIdTarget, rebuild=False, include_stars=False, spark=None):
@@ -154,7 +170,8 @@ class AccretionTracker():
         
         talk("\nAccretionTracker: Building temporary tables for galId={} at snapnum={}".format(galIdTarget, self._snapnum), "talky")
 
-        self._gptable = GasPartTable(self._model, self._snapnum, galIdTarget)
+        self._gptable = GasPartTable(self._model, self._snapnum, galIdTarget,
+                                     include_stars = True)
         self._pptable = PhEWPartTable.from_gptable(self._gptable)
 
         # Get the particle ID list to track
@@ -164,7 +181,12 @@ class AccretionTracker():
                 pidlist += self._snap.get_star_particles_in_galaxy(galIdTarget)
 
             # Create/Load gptable
-            self._gptable.build_gptable(pidlist, include_stars=include_stars, overwrite=True)
+            self._gptable.build_table(
+                pidlist,
+                self._splittable.data,
+                include_stars=include_stars,
+                overwrite=True
+            )
             # Compute the 'Mgain' field for all gas particles in gptable
             self._gptable.add_field_mgain()
             # Add their relations to galIdTarget
@@ -303,11 +325,11 @@ class AccretionTracker():
 
     @property
     def gptable(self):
-        return None (self._gptable is None) else self._gptable.data
+        return None if(self._gptable is None) else self._gptable.data
 
     @property
     def pptable(self):
-        return None (self._pptable is None) else self._pptable.data
+        return None if(self._pptable is None) else self._pptable.data
 
 
 def get_ism_history_for_galaxy(galIdTarget):
@@ -320,18 +342,17 @@ def get_ism_history_for_galaxy(galIdTarget):
     mwtable = act.compute_wind_mass_partition_by_birthtag()
     return mwtable, act
 
-galIdTarget = 715 # Npart = 28, logMgal = 9.5, within 0.8-0.9 range
-
 # 568, 715, 1185
 
-__mode__ = "__showX__"
-
-if(__mode__ == "__load__"):
+def _test():
     model = "l25n144-test"    
     snap = snapshot.Snapshot(model, 108)
+    galIdTarget = 715 # Npart = 28, logMgal = 9.5, within 0.8-0.9 range
     act = AccretionTracker.from_snapshot(snap)
     act.initialize()
-    act.build_temporary_tables_for_galaxy(galIdTarget, rebuild=False)
-    mwtable = act.compute_wind_mass_partition_by_birthtag()
-    mwtable.groupby(['PId','birthTag'])['Mgain'].sum()
+    act.build_temporary_tables_for_galaxy(galIdTarget, include_stars=True, rebuild=False)
+    # mwtable = act.compute_wind_mass_partition_by_birthtag()
+    # mwtable.groupby(['PId','birthTag'])['Mgain'].sum()
 
+if(__name__ == "__main__"):
+    _test()

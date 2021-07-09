@@ -12,6 +12,11 @@ import galaxy
 import utils
 from utils import *
 
+import pyarrow as pa
+import pyarrow.parquet as pq
+
+from progen import ProgTracker
+
 class ValidateRuleExisted():
     '''
     Validate whether a table has been created with a same set of parameters.
@@ -53,12 +58,12 @@ class ValidateRuleWithField():
             fields = [fields]
 
         for field in fields:
-            record = self.event.get("with_field_" + field.lower())
+            record = event.get("with_field_" + field.lower())
             if(record is None or not record):
-                talk("{} field is not found.".format(field), "normal", self.verbose)
+                talk("{} field is not found.".format(field), "normal", verbose)
                 return False
             if(field not in columns):
-                talk("{} field is not found in the columns of the current table.", "normal", self.verbose)
+                talk("{} field is not found in the columns of the current table.", "normal", verbose)
 
         return True
 
@@ -129,7 +134,7 @@ class TemporaryTable(DerivedTable):
         super(TemporaryTable, self).__init__(model)
         self._model = model
         self._snapnum = snapnum
-        self._simulation = Simulation(model)
+        self._simulation = simulation.Simulation(model)
         self._galId = galIdTarget
         self._path_out = self._simulation._path_tmpdir
         self._fformat = "parquet"
@@ -145,6 +150,9 @@ class TemporaryTable(DerivedTable):
             'fformat': self._fformat,
             'file_type': "file"
         }
+
+    def _parse_keywords(self, **kwargs):
+        pass
 
     def build_table(self):
         '''
@@ -192,7 +200,7 @@ class TemporaryTable(DerivedTable):
                     self.data = spark.read.csv(self._path_table)
             
         else:
-            talk("{} not found. Use build_table() to build new table.".format(self._path_table), verbose)
+            talk(f"Validatation for {self.filename} Fail. Use build_table() to build new table.", verbose)
             return False
 
     def validate_table(self, validate_rule, verbose="normal"):
@@ -218,6 +226,8 @@ class TemporaryTable(DerivedTable):
         spark: SparkSession. Default=None
             If None, do not use spark
         '''
+
+        import pyspark
 
         talk("Saving {} as {}".format(self.clsstr, self._path_table), 'quiet')
 
@@ -342,7 +352,7 @@ class PermanentTable(DerivedTable):
                                         dtype=self._schema['dtypes'])
             return True
         else:
-            talk("{} not found. Use build_table() to build new table.".format(self._path_table), verbose)
+            talk(f"Validation for {self.filename} Failed. Use build_table() to build new table.", verbose)
             return False
 
     def validate_table(self, validate_rule, verbose="normal"):
@@ -447,7 +457,7 @@ class GasPartTable(TemporaryTable):
         '''
         Parse keywords specific to GasPartTable.
         '''
-        
+        super()._parse_keywords(**kwargs)
         if(kwargs.get('include_stars') is not None):
             self._pars['include_stars'] = kwargs['include_stars']
         if(kwargs.get('with_field_mgain') is not None):
@@ -543,10 +553,10 @@ class GasPartTable(TemporaryTable):
         self.data = gptable
 
         # New table is clean without the derived fields
-        self.set_params('with_field_mgain', False)
-        self.set_params('with_field_relation', False)
+        self.set_param('with_field_mgain', False)
+        self.set_param('with_field_relation', False)
 
-    def add_field_mgain(spark=None):
+    def add_field_mgain(self, spark=None):
         '''
         For each gas particle in the gptable, compute its mass gain since last
         snapshot. This does not account for splitting particles yet. 
@@ -574,7 +584,6 @@ class GasPartTable(TemporaryTable):
         ----------
         haloIdTarget: int.
             The haloId of the halo in the current snapshot.
-        gptable: pandas.DataFrame or Spark DataFrame
         progtable: pandas.DataFrame.
             Columns: haloId*, snapnum, progId, hostId, logMvir, logMsub
             Output of progen.find_all_previous_progenitors().
@@ -585,24 +594,25 @@ class GasPartTable(TemporaryTable):
             Mapping between haloId and hostId for each snapshot.
         '''
 
-        if(not self.validate_table(ValidateRuleWithField('relation', self.data.columns))):
+        if(self.validate_table(ValidateRuleWithField('relation', self.data.columns))):
             return
 
         # Find all halos that once hosted the particles
         halos = ProgTracker.compile_halo_hosts(self.data, ['snapnum','haloId'])
 
         # Update halos with the relation tag
-        halos = ProgTracker.assign_relations_to_halos(halos, progtable, hostmap)
+        halos = ProgTracker.assign_relations_to_halos(self.galId, halos, progtable, hostmap)
         
-        gptable = pd.merge(gptable, halos, how='left',
+        gptable = pd.merge(self.data, halos, how='left',
                            left_on=['snapnum','haloId'], right_index=True)
         gptable['relation'] = gptable['relation'].fillna('IGM')
 
+        self.data = gptable
         self.set_param('with_field_relation', True)
-
+        
 
     # TODO: This may better belong to some other module
-    def find_particle_ancestors(pidlist, splittable):
+    def find_particle_ancestors(self, pidlist, splittable):
         '''
         In case there is splitting, we need to find all the ancestors of a 
         gas particle in order to figure out where its wind material came from 
@@ -685,7 +695,7 @@ class GasPartTable(TemporaryTable):
 #                      Class: PhEWPartTable
 # ----------------------------------------------------------------
 
-class PhewPartTable(TemporaryTable):
+class PhEWPartTable(TemporaryTable):
     '''
     Temporary table that contains selected PhEW particles and their histories.
     '''
@@ -695,7 +705,7 @@ class PhewPartTable(TemporaryTable):
         self._clsstr = "pptable"
         self._initialize()
 
-        self._parse_keywords(kwargs)
+        self._parse_keywords(**kwargs)
 
         # Must match the following parameters to validate an existinig table
         self.validate_rule = ValidateRuleExisted(
@@ -725,6 +735,7 @@ class PhewPartTable(TemporaryTable):
         Parse keywords specific to PhEWPartTable.
         '''
 
+        super()._parse_keywords(**kwargs)        
         if(kwargs.get('include_stars') is not None):
             self._pars['include_stars'] = kwargs['include_stars']
         if(kwargs.get('with_field_birthtag') is not None):
@@ -790,7 +801,7 @@ class PhewPartTable(TemporaryTable):
 
         self.data = pptable
 
-        self.set_params('with_field_birthtag', False)
+        self.set_param('with_field_birthtag', False)
 
     def add_field_birthtag(self, haloIdTarget, progtable, hostmap):
         '''
@@ -812,7 +823,7 @@ class PhewPartTable(TemporaryTable):
 
         '''
 
-        if(not self.validate_table(ValidateRuleWithField('birthTag', self.data.columns))):
+        if(self.validate_table(ValidateRuleWithField('birthTag', self.data.columns))):
             return
 
         halos = ProgTracker.compile_halo_hosts(self.data, ['snapfirst','birthId'])
@@ -847,13 +858,19 @@ class ProgTable(PermanentTable):
         # Must match the following parameters to validate an existinig table
         self.validate_rule = ValidateRuleExisted(
             snapnum=self._snapnum,
-            fformat=self._pars.get('fformat')
+            fformat=self._pars.get('fformat'),
+            load_halo_mass=self._pars.get('load_halo_mass')
         )
+
+    def _parse_keywords(self, **kwargs):
+        super()._parse_keywords(**kwargs)
+        if(kwargs.get('load_halo_mass') is not None):
+            self._pars['load_halo_mass'] = kwargs['load_halo_mass']
 
     def data(self):
         return self.data.set_index('haloId')
 
-    def build_table(self, load_halo_mass=True, overwrite=False):
+    def build_table(self, overwrite=False):
         '''
         Find the progenitors for all halos within a snapshot in all previous 
         snapshots.
@@ -881,10 +898,10 @@ class ProgTable(PermanentTable):
 
         '''
 
-        if(load_halo_mass == False):
+        if(self._pars.get('load_halo_mass') == False):
             self._schema['columns'].remove('logMvir')
             self._schema['columns'].remove('logMsub')
-            self._schema['columns'].append('Npart')        
+            self._schema['columns'].append('Npart')
 
         if(overwrite == False and self.validate_table(self.validate_rule)):
             talk("Load existing {} file: {}".format(self.clsstr, self.filename), 'normal')
@@ -896,7 +913,7 @@ class ProgTable(PermanentTable):
         snap = snapshot.Snapshot(self.model, self.snapnum)
         for snapnum in tqdm(range(0, self.snapnum+1), desc='snapnum', ascii=True):
             snapcur = snapshot.Snapshot(self.model, snapnum, verbose='talky')
-            if(load_halo_mass):
+            if(self._pars.get('load_halo_mass') == True):
                 snapcur.load_halos(['Mvir', 'Msub'])
             else:
                 snapcur.load_halos(['Npart'])            
@@ -910,7 +927,7 @@ class ProgTable(PermanentTable):
             df = pd.merge(df, snapcur.halos, how='left', left_on='progId', right_index=True)
             progtable = df.copy() if (progtable is None) else pd.concat([progtable, df])
         progtable.index.rename('haloId', inplace=True)
-        if(load_halo_mass == False):
+        if(self._pars.get('load_halo_mass') == False):
             progtable.Npart = progtable.Npart.fillna(0).astype('int')
         self.data = progtable
 
@@ -1362,9 +1379,33 @@ class PhEWTable(PermanentTable):
             self.data = phewtable
             self.save_table(spark=spark)
 
+def _test(model=None):
+    model = 'l25n144-test' if(model is None) else model
+
+    # Create instances
+    hosttable = HostTable(model)
+    inittable = InitTable(model)
+    phewtable = PhEWTable(model)
+    splittable = SplitTable(model)
+
+    # Load table and verify if the data is correct
+    hosttable.load_table()
+    print(hosttable.data)
+
+    inittable.load_table()
+    print(inittable.data)
+
+    splittable.load_table()
+    print(splittable.data)
+
+    phewtable.load_table()
+    print(phewtable.data)
+    
+    progtable = ProgTable(model, snapnum=108, load_halo_mass=True)
+    progtable.load_table()
+    # This should fail because the table was created with load_halo_mass = False.
+    progtable = ProgTable(model, snapnum=108, load_halo_mass=False)
+    progtable.load_table()    
+    
 if(__name__ == "__main__"):
-    hosttable = HostTable('l25n144-test')
-    inittable = InitTable('l25n144-test')
-    progtable = ProgTable('l25n144-test', snapnum=108)
-    phewtable = PhEWTable('l25n144-test')
-    splittable = SplitTable('l25n144-test')    
+    _test()

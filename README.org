@@ -36,13 +36,13 @@ PyGIZMO is built and tested with the following libraries:
 
 #+CAPTION[Lists]: Pre-requisites
 + Python 3.x
-+ numpy
-+ scipy
-+ pandas
-+ h5py
-+ matplotlib
-+ seaborn
-+ pyspark
++ numpy >= 1.19.0
++ scipy >= 1.6.0
++ pandas >= 1.2.0
++ h5py >= 2.10.0
++ matplotlib >= 3.3.0
++ seaborn >= 0.11.0
++ pyspark >= 3.1.1
 + tqdm (progress bar animation)
 
 ** TODO Installation
