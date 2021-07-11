@@ -22,8 +22,6 @@ import warnings
 
 cfg = SimConfig()
 
-path_schema_default = os.path.join(
-    cfg.get('Paths', 'pygizmo'), cfg.get('Schema','galaxy'))
 pyArrowTypeCast = {
     "int64":pa.int64(),
     "int32":pa.int32(),
@@ -44,6 +42,8 @@ def abspath(relpath):
     if(relpath[0] == '/'):
         return relpath
     return os.path.join(os.path.dirname(__file__), relpath)
+
+path_schema_default = abspath(cfg.get('Schema','galaxy'))
 
 def cumhist(arr, bins=10, weights=None, reverse=False):
     '''
