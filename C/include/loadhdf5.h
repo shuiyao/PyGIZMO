@@ -68,7 +68,7 @@ extern int Nfofgrps;
 int load_hdf5(char *snap);
 int allocate_memory(void);
 void get_snap_string(int snapnum, char *snapstr);
-void cosmounits();
+void cosmounits(void);
 int read_tipsy_header(char *filename);
 int read_gtp(char *filename);
 int read_sogtp(char *filename);

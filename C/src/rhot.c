@@ -51,7 +51,7 @@ void GetFilenames(char *snapbase, char *outputbase, int snapnum)
   fprintf(stdout, "Infile: %s\n", infilename);
 }
 
-int grid_count(float x, float y, float m, float metc, float meto)
+int grid_count(float x, float y, float m, float meto)
 {
   int ix, iy, i;
   ix = (int)((x - XMIN) / (XMAX - XMIN) * ncells_x);
@@ -116,7 +116,7 @@ void ReadData(char *filename)
 #endif
       LogT = log10(LogT);
       Mass = P[i].Mass;
-      Nout += grid_count(LogRho, LogT, Mass, P[i].metal[2], P[i].metal[4]);
+      Nout += grid_count(LogRho, LogT, Mass, P[i].metal[4]);
       Ntot ++;
     }
   printf("Data Reading Done, Nout/Ntot = %d/%d\n", Nout, Ntot);

@@ -12,7 +12,8 @@ from setuptools import Extension, setup
 scripts = []
 
 # find all sub-packages
-__file__ = "/home/shuiyao/codes/pygizmo/setup.py"
+# __file__ = "/home/shuiyao/codes/pygizmo/setup.py"
+__file__ = "/home/shuiyao_umass_edu/pygizmo/setup.py"
 
 modules = []
 setup_dir = os.path.dirname(os.path.realpath(__file__))
@@ -22,9 +23,6 @@ for root, dirs, files in os.walk(setup_dir):
     #     continue
     if "__init__.py" in files:
         modules.append(submod)
-
-modules.remove(".")
-modules.remove("shortlos")
 
 # clean and make the cpygizmo.so library
 subprocess.run(["make", "clean"], cwd=setup_dir + "/C", check=True)

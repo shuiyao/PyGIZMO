@@ -77,7 +77,7 @@ int load_hdf5(char *snap){
   FILE *fp;
   int multipart = 0;
 
-  int allocate_memory();
+  int allocate_memory(void);
   
   sprintf(infile,"%s.hdf5",snap);
   if(!(fp=fopen(infile,"r"))){

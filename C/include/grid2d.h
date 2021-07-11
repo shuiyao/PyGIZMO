@@ -22,7 +22,7 @@ struct NodesStruct {
 extern struct NodesStruct *nodes_array;
 
 int load_grid(int nx, int ny);
-int grid_count(float x, float y, float m, float metc, float meto);
+int grid_count(float x, float y, float m, float meto);
 
 
 #endif
