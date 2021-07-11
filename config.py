@@ -1,4 +1,6 @@
+import os
 import configparser
+from . import utils
 
 class SimConfig():
     '''
@@ -25,7 +27,8 @@ class SimConfig():
     '''
     def __init__(self, path_config=None):
         if(path_config is None):
-            self._path = "pygizmo.cfg"
+            self._path = os.path.join(os.path.dirname(__file__),
+                                      "pygizmo.cfg")
         else:
             self._path = path_config
         self._cfg = self.load_config_file()
@@ -52,3 +55,7 @@ class SimConfig():
         else:
             return cfg
         return cfg
+
+    def get_path(self, category, field):
+        relpath = self.get(category, field)
+        return utils.abspath(relpath)

@@ -1,7 +1,8 @@
-import json
-from config import SimConfig
-from datetime import datetime
 import os
+import json
+from datetime import datetime
+
+from .config import SimConfig
 
 class SimLog():
     '''

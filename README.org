@@ -762,6 +762,10 @@ Future work.
 
 * TODO Scalable Data Pipelines with Apache Spark
 
+The performance bottle-neck for the accretion tracking engine is building the temporary tables. 
+
+https://github.com/tabaer/pbstools/blob/master/bin/pbs-spark-submit
+https://www.osc.edu/~troy/pbstools/man/pbs-spark-submit
 
 * References
 [[http://www.tapir.caltech.edu/~phopkins/Site/GIZMO.html][The GIZMO Simulation Code]]

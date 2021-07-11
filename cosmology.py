@@ -14,16 +14,14 @@ sigma8       : sigma8 is sigma8 lol, jargon
 n            : jargon again
 '''
 
-__all__ = ['help', 'info', 'E', 'H', 'd_A', 'Vc', 'r200', 'Overdensity_vir', \
-           'rho_crit', 'rhovir_over_rhobar', 'rvir', 'vvir', 'Tvir']
-
 from numpy import log10, exp, sqrt, log
-from astroconst import pc, ac
 from scipy import integrate
 from scipy.interpolate import interp1d
-import ioformat
-from config import SimConfig
-import utils
+
+from . import utils
+from .astroconst import pc, ac
+from .config import SimConfig
+
 
 # Everything is in c.g.s units.
 

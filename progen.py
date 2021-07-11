@@ -3,22 +3,11 @@ Procedures related to finding the progenitors of galactic halos in previous
 snapshots.
 '''
 
-import snapshot
-from utils import talk
-import galaxy
-import pandas as pd
-from tqdm import tqdm
 import os
 
-schema_progtable = {'columns':['haloId','snapnum','progId','hostId','logMvir','logMsub'],
-                    'dtypes':{'haloId':'int32',
-                              'snapnum':'int32',
-                              'progId':'int32',
-                              'hostId':'int32',
-                              'logMvir':'float32',
-                              'logMsub':'float32',
-                              'Npart':'int32'}
-}
+from . import galaxy
+from . import snapshot
+from .utils import *
 
 class ProgTracker():
 

@@ -2,22 +2,18 @@
 The class Snapshot contains meta-data of a snapshot.
 '''
 
-import h5py
 import os
-import numpy as np
-import pandas as pd
-import pdb
-import galaxy
 import warnings
 
-import units
-from astroconst import pc, ac
+import h5py
 
-from config import SimConfig
-from utils import talk
+from .astroconst import pc, ac
+from .config import SimConfig
+from .utils import *
+from . import units
+from . import galaxy
 
-import progen
-
+from . import progen
 
 class Snapshot(object):
     '''
@@ -82,7 +78,7 @@ class Snapshot(object):
         self._path_sovcirc = os.path.join(self._path_data, "so_z{:03d}.sovcirc".format(snapnum))
         self._path_sopar = os.path.join(self._path_data, "so_z{:03d}.par".format(snapnum))
 
-        self._hdf5schema = pd.read_csv(self._cfg.get('Schema', 'HDF5'), header=0)\
+        self._hdf5schema = pd.read_csv(self._cfg.get_path('Schema', 'HDF5'), header=0)\
                              .set_index('FieldName')
         with h5py.File(self._path_hdf5, "r") as hf:
             attrs = hf['Header'].attrs
@@ -384,7 +380,7 @@ class Snapshot(object):
         If ions==True, tabion_???.csv; else tabmet_???.csv
         '''
 
-        import C
+        from . import C
 
         fprefix = "tabion" if (ions) else "tabmet"
         fout = os.path.join(self._path_workdir,

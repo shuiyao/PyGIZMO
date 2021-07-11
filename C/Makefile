@@ -42,6 +42,6 @@ $(LIB): $(OBJ) Makefile
 	$(CC) -fPIC -shared $(LPATH) $(OBJ) $(LDFLAGS) -o $@
 
 clean:
-	rm -r $(BUILDIR)
-	rm $(LIB)
+	# rm -r $(BUILDIR)
+	# rm $(LIB)
 

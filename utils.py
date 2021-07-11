@@ -11,12 +11,14 @@ from pdb import set_trace
 
 import json
 import sys
-from config import SimConfig
+from .config import SimConfig
 import glob
 
 
 import pyarrow as pa
 import pyarrow.parquet as pq
+
+import warnings
 
 cfg = SimConfig()
 
@@ -29,6 +31,19 @@ pyArrowTypeCast = {
     "float64":pa.float64(),
     "string":pa.string()    
 }
+
+def abspath(relpath):
+    '''
+    Return the abspath of a file given the relpath to the pygizmo source.
+    '''
+    
+    assert(isinstance(relpath, str)), "relpath must be a string"
+    if(len(relpath) < 1):
+        warnings.warn("relpath is empty.")
+        return relpath
+    if(relpath[0] == '/'):
+        return relpath
+    return os.path.join(os.path.dirname(__file__), relpath)
 
 def cumhist(arr, bins=10, weights=None, reverse=False):
     '''

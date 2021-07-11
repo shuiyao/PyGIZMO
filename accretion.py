@@ -21,23 +21,16 @@ HaloId = 568:
   + In a cluster environment
 '''
 
-import numpy as np
-import pandas as pd
-import snapshot
-import utils
-from utils import talk
-from tqdm import tqdm
+import os
 
 import pyarrow as pa
 import pyarrow.parquet as pq
 
-import os
-import pdb
-import simulation
-
-from importlib import reload
-
-from derivedtables import GasPartTable, PhEWPartTable
+from . import simulation
+from . import snapshot
+from . import utils
+from .utils import *
+from .derivedtables import GasPartTable, PhEWPartTable
 
 schema_gptable = {'columns':['PId','snapnum','Mass','haloId','Mgain','relation'],
                   'dtypes':{'PId':'int64',

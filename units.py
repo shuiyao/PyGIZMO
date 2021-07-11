@@ -2,11 +2,12 @@
 Define the unit system to use.
 '''
 
-from astroconst import pc, ac
 from numpy import exp, log, pi, sqrt
 import configparser
-from config import SimConfig
 import abc
+
+from .astroconst import pc, ac
+from .config import SimConfig
 
 class Units(object):
     '''

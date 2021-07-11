@@ -1,21 +1,20 @@
 import abc
 from datetime import datetime
-from config import SimConfig
-from simlog import SimLog
-import simulation
-import snapshot
-
-from tqdm import tqdm
-
-import galaxy
-
-import utils
-from utils import *
 
 import pyarrow as pa
 import pyarrow.parquet as pq
 
-from progen import ProgTracker
+from .config import SimConfig
+from .simlog import SimLog
+from . import simulation
+from . import snapshot
+from . import galaxy
+from . import utils
+
+from .environments import import_tqdm
+tqdm = import_tqdm()
+from .utils import *
+from .progen import ProgTracker
 
 class ValidateRuleExisted():
     '''
@@ -117,7 +116,7 @@ class DerivedTable(abc.ABC):
     @staticmethod
     def load_schema(class_string):
         schema = utils.load_default_schema(
-            SimConfig().get('Schema', 'derivedtables'))
+            SimConfig().get_path('Schema', 'derivedtables'))
         return schema[class_string]
 
     @property

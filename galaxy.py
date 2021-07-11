@@ -1,7 +1,8 @@
-import pandas as pd
-import warnings
 import os
-import utils
+import warnings
+import pandas as pd
+
+from . import utils
 
 DefaultSchema = utils.load_default_schema()
 
