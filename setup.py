@@ -12,17 +12,19 @@ from setuptools import Extension, setup
 scripts = []
 
 # find all sub-packages
-# __file__ = "/home/shuiyao/codes/pygizmo/setup.py"
-__file__ = "/home/shuiyao_umass_edu/pygizmo/setup.py"
+
+__file__ = os.getcwd()
 
 modules = []
 setup_dir = os.path.dirname(os.path.realpath(__file__))
 for root, dirs, files in os.walk(setup_dir):
     submod = os.path.relpath(root, setup_dir).replace(os.sep, ".")
-    # if not submod.startswith("pygad"):
-    #     continue
+    if not submod.startswith("pygizmo"):
+        continue
     if "__init__.py" in files:
         modules.append(submod)
+
+raise ValueError        
 
 # clean and make the cpygizmo.so library
 subprocess.run(["make", "clean"], cwd=setup_dir + "/C", check=True)
