@@ -48,6 +48,7 @@ setup(
     url="",
     include_package_data=True,
     packages=list(map(str, modules)),
+    package_data={'pygizmo': ['pygizmo.cfg', 'data/*']},
     scripts=scripts,
     # version=versioneer.get_version(),
     # cmdclass=versioneer.get_cmdclass(),
