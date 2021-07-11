@@ -19,18 +19,18 @@ modules = []
 setup_dir = os.path.dirname(os.path.realpath(__file__))
 for root, dirs, files in os.walk(setup_dir):
     submod = os.path.relpath(root, setup_dir).replace(os.sep, ".")
-    if not submod.startswith("pygizmo"):
+    if not submod.startswith("pygad"):
         continue
     if "__init__.py" in files:
         modules.append(submod)
 
 # clean and make the cpygizmo.so library
-subprocess.run(["make", "clean"], cwd=setup_dir + "/pygizmo/C", check=True)
+subprocess.run(["make", "clean"], cwd=setup_dir + "/C", check=True)
 ext_module = Extension(
-    "pygizmo/C/cpygizmo",
+    "C/cpygizmo",
     language="gcc",
-    sources=glob("pygizmo/C/src/*"),
-    include_dirs=["pygizmo/C/include", "/usr/include"],
+    sources=glob("C/src/*"),
+    include_dirs=["C/include", "/usr/include"],
     extra_compile_args=[
         "-fPIC",
         "-O3",
