@@ -1,9 +1,8 @@
 import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
+
 import pandas as pd
 import os
-
-from .. import snapshot
 
 class Halo3D(object):
     '''
@@ -317,6 +316,8 @@ class Halo3D(object):
             By default, output to the tmpdir.
         '''
 
+        from ..pygizmo import snapshot
+
         folder = "frames_{:3d}_{:05d}".format(self._snapnum, self.haloId)
         if(path_output is None):
             path_output = os.path.join(self.path_figure, folder)
@@ -341,19 +342,21 @@ class Halo3D(object):
     def halos(self):
         return self._snap.halos
 
-    @staticmethod
-    def demo():
-        '''
-        Another halo for demonstration is:
-        model = l25n288-phew-m5
-        snapnum = 58
-        haloId = 48
-        angles_faceon = (98, 5)
-        angles_edgeon = (117, -84)
-        '''
-        from .. import snapshot
-        snap = snapshot.Snapshot('l25n144-test', 108)        
-        h3d = Halo3D(snap, haloid=147)
-        h3d.draw()
-        plt.show()
 
+def _test():
+    '''
+    Another halo for demonstration is:
+    model = l25n288-phew-m5
+    snapnum = 58
+    haloId = 48
+    angles_faceon = (98, 5)
+    angles_edgeon = (117, -84)
+    '''
+    from ..pygizmo import snapshot
+    snap = snapshot.Snapshot('l25n144-test', 108)        
+    h3d = Halo3D(snap, haloid=147)
+    h3d.draw()
+    plt.show()
+
+if(__name__ == '__main__'):
+    _test()

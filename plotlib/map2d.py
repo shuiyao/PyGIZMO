@@ -1,6 +1,7 @@
 import pandas as pd
 import numpy as np
 import seaborn as sns
+import matplotlib as mpl
 import matplotlib.pyplot as plt
 from matplotlib.patches import Circle
 from matplotlib.colors import LogNorm
@@ -8,7 +9,7 @@ from scipy import ndimage
 
 from pdb import set_trace
 
-import snapshot
+mpl.rcParams['mathtext.default'] = 'tt'
 
 class Map2D(object):
 
@@ -24,8 +25,8 @@ class Map2D(object):
 
     def draw(self, save=False):
         self._set_ticks()
-        self.ax.set_xlabel(r'{}'.format(self.xlabel))
-        self.ax.set_ylabel(r'{}'.format(self.ylabel))
+        self.ax.set_xlabel(r"{}".format(self.xlabel))
+        self.ax.set_ylabel(r"{}".format(self.ylabel))
         if(save):
             plt.savefig("out.png")
         else:
@@ -86,7 +87,7 @@ class DensityMap(Map2D):
     >>> map2d.draw()
     '''
     
-    def __init__(self, snap, ax, **kwargs):
+    def __init__(self, snap, ax, xlims=(0.0, 1.0), ylims=(0.0, 1.0), **kwargs):
         super(DensityMap, self).__init__(snap, ax, **kwargs)
 
         self.boxsize = self._snap.boxsize
@@ -217,16 +218,30 @@ class DensityMap(Map2D):
                                       fc=cmap(Mc), ec=None))
         
 class PhaseDiagram(Map2D):
+    '''
+    Example
+    -------
+    >>> from ..pygizmo import snapshot
+    >>> model = 'l25n144-test'
+    >>> path_grid = "/path/to/l25n144-test/tabmet_108.csv"
+    >>> fig, ax = plt.subplots(1, 1, figsize=(6,6))
+    >>> snap = snapshot.Snapshot(model, 108)
+    >>> rhot = PhaseDiagram(snap, ax)
+    >>> rhot.load_grid_data(path_grid)
+    >>> rhot.draw(annotate=True)        
+    >>> plt.show()
+    '''
+    
     def __init__(self, snap, ax, cmap='Purples', **kwargs):
-        super(DensityMap, self).__init__(snap, ax, **kwargs)
+        super(PhaseDiagram, self).__init__(snap, ax, **kwargs)
 
         self.set_colormap(cmap)
         self.xlims = (-1.5, 7.0)
         self.xticks = [-1.0, 1.0, 3.0, 5.0, 7.0]
         self.ylims = (3.0, 8.0)
         self.yticks = [3.0, 4.0, 5.0, 6.0, 7.0, 8.0]
-        self.xlabel = "$log(\rho/\bar{\rho})$"
-        self.ylabel = "$log(T/K)$"
+        self.xlabel = "log(\rho/\bar{\rho})"
+        self.ylabel = "log(T/K)"
 
     def load_grid_data(self, path_grid):
         rhot = pd.read_csv(path_grid)
@@ -245,7 +260,17 @@ class PhaseDiagram(Map2D):
         # Reverse the logT order
         self.ax.invert_yaxis()
         self._set_ticks()
-    def _nh(x):
+
+    def draw(self, annotate=True):
+        self._draw_heatmap()
+        ax_top = self._update_top_x_axis()
+        self.ax.set_xlabel(r"$log(\rho/\bar{\rho})$")
+        self.ax.set_ylabel(r"log(T/K)")
+        
+        if(annotate):
+            self.annotate_phase_regions(self._snap.redshift)
+
+    def _nh(self, x):
         '''
         Convert physical density to cosmic over-density
         '''
@@ -261,7 +286,7 @@ class PhaseDiagram(Map2D):
     def _update_top_x_axis(self):
         ax2 = self.ax.twiny()
         x1, x2 = self.xlims[0], self.xlims[1]
-        ax2.set_xlim(nh(x1), nh(x2))
+        ax2.set_xlim(self._nh(x1), self._nh(x2))
         ax2.figure.canvas.draw()
         ax2.set_xlabel(r'$Log(n_H) [cm^{-3}]$')
         ax2.tick_params(direction='in')
@@ -292,11 +317,27 @@ class PhaseDiagram(Map2D):
         self._textnorm(-1.,4.6, "Diffuse", color="purple")
         self._textnorm(5.2,4.6, "Condensed", color="teal")
 
-    @staticmethod
-    def demo():
-        fig, axs = plt.subplots(1, 1, figsize=(6,6))
-        ax = axs[0] if isinstance(axs, list) else axs
-        rhot = PhaseDiagram(ax)
-        rhot.load_grid_data(path_grid)
-        rhot.draw(annotate=True)        
-        plt.show()
+def _test(model=None):
+    from ..pygizmo import snapshot
+    model = 'l25n144-test' if model is None else model
+    path_grid = "/home/shuiyao/workspace/scidata/l25n144-test/tabmet_108.csv"
+    fig, axs = plt.subplots(1, 1, figsize=(6,6))
+    ax = axs[0] if isinstance(axs, list) else axs
+    snap = snapshot.Snapshot(model, 108)
+    rhot = PhaseDiagram(snap, ax)
+    rhot.load_grid_data(path_grid)
+    rhot.draw(annotate=True)        
+    plt.show()
+
+def _test_densitymap(model=None):
+    from ..pygizmo import snapshot    
+    model = 'l25n144-test' if model is None else model    
+    snap = snapshot.Snapshot(model, 108)
+    fig, ax = plt.subplots(1, 1, figsize=(8,8))
+    map2d = DensityMap(snap, ax, zrange=(0.0, 1.0))
+    map2d.add_layer_density_map(layer='temperature', ncells=(256, 256))
+    map2d.add_layer_particles(verbose=True, skip=None)
+    map2d.draw()
+
+if(__name__ == "__main__"):
+    _test_densitymap()

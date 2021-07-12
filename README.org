@@ -45,20 +45,73 @@ PyGIZMO is built and tested with the following libraries:
 + pyspark >= 3.1.1
 + tqdm (progress bar animation)
 
-** TODO Installation
+** Installation
 #+BEGIN_SRC shell
-git clone http://
-cd 
-sudo python setup.py install
+git clone http://github.com/shuiyao/PyGIZMO
+cd PyGIZMO
+pip install .
 #+END_SRC
 
-** TODO Examples
+** Examples
 
 This *jupyter notebook* demonstrates several basic and advanced user cases of the program.
 
 *** Load snapshots
+#+BEGIN_SRC python
+>>> from pygizmo.snapshot import Snapshot
+>>> model = "l25n144-test"
+>>> snap = Snapshot(model, 98)
+Snapshot: l25n144-test, snapnum: 108
+>>> snap.redshift
+0.2500000073365194
+>>> snap.cosmology
+{'Omega0': 0.3, 'OmegaLambda': 0.7, 'HubbleParam': 0.7}
+>>> snap.get_units('tipsy', cgs=False).get('length')
+35714.285714285725    
+>>> snap.ngals
+1469
+>>> snap.ngas
+2561261
+>>> snap.select_galaxies_by_mass_percentiles(0.98, 0.985)    
+       Npart   logMstar    logMgal
+galId                             
+48       728  10.860389  10.981041
+95       722  10.888107  11.002301
+589      673  10.881828  10.962551
+827      690  10.871061  10.991914
+841      727  10.918854  11.011083
+889      676  10.914965  10.981414
+936      653  10.907985  10.954995
+>>> snap.load_gas_particles(['PId','Mass','galId','Tmax'])
+>>> snap.gp.columns
+Index(['PId', 'Mass', 'galId', 'Tmax'], dtype='object')
+>>> snap.load_gas_particles(['PId','logT'])
+Index(['PId', 'U', 'Ne', 'Y', 'logT'], dtype='object')
 
-*** Draw phase diagram and overplot wind particles
+>>> from plotlib.map2d import DensityMap
+>>> fig, ax = plt.subplots(1, 1, figsize=(8,8))
+>>> map2d = DensityMap(snap, ax, zrange=(0.0, 1.0))
+>>> map2d.add_layer_density_map(layer='temperature', ncells=(256, 256))
+>>> map2d.add_layer_particles(verbose=True, skip=None)
+>>> map2d.draw()
+'''
+#+END_SRC
+[[./figures/demo_densitymap.png]]
+
+*** Draw phase diagram
+#+BEGIN_SRC python
+>>> from pygizmo import snapshot
+>>> from plotlib.map2d import PhaseDiagram
+>>> model = 'l25n144-test'
+>>> path_grid = "/path/to/l25n144-test/tabmet_108.csv"
+>>> fig, ax = plt.subplots(1, 1, figsize=(6,6))
+>>> snap = snapshot.Snapshot(model, 108)
+>>> rhot = PhaseDiagram(snap, ax)
+>>> rhot.load_grid_data(path_grid)
+>>> rhot.draw(annotate=True)        
+>>> plt.show()
+#+END_SRC
+[[./figures/demo_phase_diagram.png]]
 
 *** Make a movie of a single evolving halo
 

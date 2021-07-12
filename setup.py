@@ -13,8 +13,6 @@ scripts = []
 
 # find all sub-packages
 
-__file__ = os.getcwd()
-
 modules = []
 setup_dir = os.path.dirname(os.path.realpath(__file__))
 for root, dirs, files in os.walk(setup_dir):
@@ -43,16 +41,23 @@ ext_module = Extension(
 )
 
 setup(
-    name="cpygizmo",
-    description="analysis module for GIZMO",
+    name="pygizmo",
+    description="Python APIs for GIZMO simulations",
     author="Shuiyao Huang",
     author_email="shuangumass@gmail.com",
-    url="",
+    url="https://github.com/shuiyao/PyGIZMO",
     include_package_data=True,
     packages=list(map(str, modules)),
     package_data={'pygizmo': ['pygizmo.cfg', 'data/*']},
     scripts=scripts,
+    version='1.0',
+    ext_modules=[ext_module],
+    classifiers=[
+        'Development Status :: 3 - Alpha',
+        'Intended Audience :: Science/Research',
+        'License :: OSI Approved :: MIT License',
+        'Programming Language :: Python :: 3 :: Only'
+    ],
     # version=versioneer.get_version(),
     # cmdclass=versioneer.get_cmdclass(),
-    ext_modules=[ext_module],
 )

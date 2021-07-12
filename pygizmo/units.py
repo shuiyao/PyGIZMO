@@ -225,7 +225,7 @@ class UnitsGIZMO(UnitsComoving):
         self.b = float(self._cfg.get("Units",'UnitMagneticField_in_gauss'))
         self.d = self.m / self.l ** 3
         self.t = self.l / self.v # 3.086e16 s ~ 0.97 Gyr
-        self.u = self.u * self.u # (km/s **2)
+        self.u = self.v * self.v # (km/s **2)
 
         self.l = self.l / self.hubble_param
         self.t = self.t / self.hubble_param

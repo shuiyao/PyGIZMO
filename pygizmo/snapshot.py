@@ -30,7 +30,7 @@ class Snapshot(object):
     Snapshot: l25n144-test, snapnum: 108
     >>> snap.redshift
     0.2500000073365194
-    >>. snap.cosmology
+    >>> snap.cosmology
     {'Omega0': 0.3, 'OmegaLambda': 0.7, 'HubbleParam': 0.7}
     >>> snap.get_units('tipsy', cgs=False).get('length')
     35714.285714285725    

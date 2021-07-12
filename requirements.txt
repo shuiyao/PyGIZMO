@@ -1,4 +1,3 @@
-Python 3.x
 numpy >= 1.19.0
 scipy >= 1.6.0
 pandas >= 1.2.0
@@ -6,4 +5,4 @@ h5py >= 2.10.0
 matplotlib >= 3.3.0
 seaborn >= 0.11.0
 pyspark >= 3.1.1
-tqdm (progress bar animation)
+tqdm >= 4.0.0
