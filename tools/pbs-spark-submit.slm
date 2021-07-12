@@ -1,0 +1,13 @@
+#!/bin/bash
+
+#SBATCH -p cpu
+#SBATCH -J pbs-spark-submit
+#SBATCH --nodes=2
+#SBATCH --ntasks-per-node=1
+#SBATCH --cpus-per-task=16        # (multi-threaded)
+#SBATCH --mem-per-cpu=3g          # (memory per node)
+#SBATCH --time=00:10:00
+#SBATCH -o ./xout-%j
+#SBATCH -e ./xerr-%j
+
+./pbs-spark-submit --srun pi.py 100
