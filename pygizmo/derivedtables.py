@@ -61,8 +61,8 @@ class ValidateRuleWithField():
             if(record is None or not record):
                 talk("{} field is not found.".format(field), "normal", verbose)
                 return False
-            if(field not in columns):
-                talk("{} field is not found in the columns of the current table.", "normal", verbose)
+            if(field not in self.columns):
+                talk("{} field is not found in the columns of the current table.".format(field), "normal", verbose)
 
         return True
 
@@ -498,7 +498,7 @@ class GasPartTable(TemporaryTable):
         
         gptable = None
         for snapnum in tqdm(range(0, snaplast+1), desc='snapnum', ascii=True):
-            snap = snapshot.Snapshot(self.model, self.snapnum, verbose='talky')
+            snap = snapshot.Snapshot(self.model, snapnum, verbose='talky')
             snap.load_gas_particles(['PId','Mass','haloId'])
 
             # From pidlist infer all PIds needed from this snapshot
@@ -552,6 +552,8 @@ class GasPartTable(TemporaryTable):
         self.data = gptable
 
         # New table is clean without the derived fields
+        self._schema['columns'].remove('Mgain')
+        self._schema['columns'].remove('relation')        
         self.set_param('with_field_mgain', False)
         self.set_param('with_field_relation', False)
 
@@ -572,6 +574,8 @@ class GasPartTable(TemporaryTable):
             w = Window.partitionBy(self.data.PId).orderBy(self.data.snapnum)
             self.data.withColumn('Mgain', self.data.Mass - sF.lag('Mass',1).over(w)).na.fill(0.0)
 
+        if('Mgain' not in self._schema['columns']):
+            self._schema['columns'].append('Mgain')
         self.set_param('with_field_mgain', True)
 
     def add_field_relation(self, progtable, hostmap):
@@ -607,6 +611,8 @@ class GasPartTable(TemporaryTable):
         gptable['relation'] = gptable['relation'].fillna('IGM')
 
         self.data = gptable
+        if('relation' not in self._schema['columns']):
+            self._schema['columns'].append('relation')
         self.set_param('with_field_relation', True)
         
 
@@ -800,6 +806,7 @@ class PhEWPartTable(TemporaryTable):
 
         self.data = pptable
 
+        self._schema['columns'].remove('birthTag')
         self.set_param('with_field_birthtag', False)
 
     def add_field_birthtag(self, haloIdTarget, progtable, hostmap):
@@ -832,6 +839,8 @@ class PhEWPartTable(TemporaryTable):
         pptable.rename(columns={'relation':'birthTag'}, inplace=True)
         self.data = pptable
 
+        if('birthTag' not in self._schema['columns']):
+            self._schema['columns'].append('birthTag')
         self.set_param('with_field_birthtag', True)        
 
 

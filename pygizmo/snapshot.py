@@ -612,6 +612,71 @@ class Snapshot(object):
         talk("{} gas particles loaded from halo #{}".format(gp.shape[0], haloId), 'normal')
         return list(gp.PId)
 
+    def select_halos_by_mass(self, logm_min, logm_max, index_only=False, central_only=True):
+        '''
+        Select galaxies whose mass (logMgal) is within a percentile range.
+        
+        Parameters
+        ----------
+        logm_min: float
+            Lower limit of the halo mass.
+        logm_max: float
+            Higher limit of the halo mass.
+        index_only: boolean. Default=False
+            If True, return only the indices of selected galaxies.
+        central_only: boolean. Default=True
+            If True, return only central halos
+
+        Return
+        ------
+        pandas.Index or pandas.DataFrame.
+        '''
+
+        assert(logm_min <= logm_max), "logm_min must be smaller than logm_max"
+
+        self.load_halos(['Msub','Mvir'])
+
+        if(central_only):
+            halos = self.halos.query("logMsub <= @logm_max and logMsub >= @logm_min")
+        else:
+            halos = self.halos.query("logMvir <= @logm_max and logMvir >= @logm_min")
+        talk("{} halos found.".format(halos.shape[0]), "normal")
+        if(index_only):
+            return halos.Index()
+        else:
+            return halos
+
+    def select_galaxies_by_mass(self, logm_min, logm_max, index_only=False):
+        '''
+        Select galaxies whose mass (logMgal) is within a percentile range.
+        
+        Parameters
+        ----------
+        logm_min: float
+            Lower limit of the galaxy mass.
+        logm_max: float
+            Higher limit of the galaxy mass.
+        index_only: boolean. Default=False
+            If True, return only the indices of selected galaxies.
+
+        Return
+        ------
+        pandas.Index or pandas.DataFrame.
+        '''
+
+        assert(logm_min <= logm_max), "logm_min must be smaller than logm_max"
+
+        if(index_only):
+            self.load_galaxies(['Mgal'])
+        else:
+            self.load_galaxies(['Npart','Mgal','Mstar'])
+        gals = self.gals.query("logMgal <= @logm_max and logMal >= @logm_min")
+        talk("{} galaxies found.".format(gals.shape[0]), "normal")
+        if(index_only):
+            return gals.Index()
+        else:
+            return gals
+
     def select_galaxies_by_mass_percentiles(self, plow, phigh, index_only=False):
         '''
         Select galaxies whose mass (logMgal) is within a percentile range.
@@ -641,6 +706,7 @@ class Snapshot(object):
         mlower = self.gals.logMgal.quantile(plow)        
         mupper = self.gals.logMgal.quantile(phigh)
         gals = self.gals.query("logMgal <= @mupper and logMgal >= @mlower")
+        talk("{} galaxies found.".format(gals.shape[0]), "normal")        
         if(index_only):
             return gals.Index()
         else:

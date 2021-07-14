@@ -112,7 +112,7 @@ class AccretionTracker():
         
         talk("\nAccretionTracker: Initializing permanent tables...", "talky")
 
-        from derivedtables import InitTable, PhEWTable, ProgTable, HostTable, SplitTable
+        from .derivedtables import InitTable, PhEWTable, ProgTable, HostTable, SplitTable
 
         self._inittable = InitTable(self._model)
         self._phewtable = PhEWTable(self._model)
@@ -165,7 +165,6 @@ class AccretionTracker():
 
         self._gptable = GasPartTable(self._model, self._snapnum, galIdTarget,
                                      include_stars = True)
-        self._pptable = PhEWPartTable.from_gptable(self._gptable)
 
         # Get the particle ID list to track
         if(not self._gptable.load_table(verbose='quiet') or rebuild==True):
@@ -187,6 +186,8 @@ class AccretionTracker():
             self._gptable.save_table()
 
         # Create/Load pptable
+        self._pptable = PhEWPartTable.from_gptable(self._gptable)
+        
         if(not self._pptable.load_table(verbose='quiet') or rebuild == True):
             self._pptable.build_table(
                 self._inittable.data,
@@ -344,8 +345,9 @@ def _test():
     act = AccretionTracker.from_snapshot(snap)
     act.initialize()
     act.build_temporary_tables_for_galaxy(galIdTarget, include_stars=True, rebuild=False)
-    # mwtable = act.compute_wind_mass_partition_by_birthtag()
+    mwtable = act.compute_wind_mass_partition_by_birthtag()
     # mwtable.groupby(['PId','birthTag'])['Mgain'].sum()
+    return mwtable
 
 if(__name__ == "__main__"):
     _test()

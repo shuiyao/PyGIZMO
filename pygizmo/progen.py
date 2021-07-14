@@ -144,10 +144,7 @@ class ProgTracker():
             defines its relation to another halo (haloIdTarget) at a later time.
         '''
 
-        from progen import ProgTracker
-        from pdb import set_trace
-
-        progsTarget = progtable.loc[progtable.index == haloIdTarget,
+        progsTarget = progtable.loc[progtable.haloId == haloIdTarget,
                                     ['snapnum', 'progId', 'hostId']]
         progsTarget.rename(columns={'hostId':'progHost'}, inplace=True)
 
