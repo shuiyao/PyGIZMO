@@ -1,0 +1,8 @@
+include *.org
+include LICENSE
+include setup.py
+
+# Default config file
+include pygizmo.cfg
+
+recursive-include pygizmo/data *
