@@ -82,7 +82,6 @@ def show_1():
     mwind_by_relation = mwind_by_relation.reset_index()
     x = mwind_by_relation.groupby("relation")['Mgain'].cumsum()
     mwind_by_relation = pd.concat([mwind_by_relation[['snapnum','relation']], x], axis=1)
-    return mass_by_relation
 
     mtot = mass_by_relation.groupby('snapnum').Mass.sum()
     mtot = pd.DataFrame({'Mass':mtot, 'relation':'TOT'}).reset_index()
