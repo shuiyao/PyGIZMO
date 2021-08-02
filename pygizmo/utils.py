@@ -1,7 +1,7 @@
 '''
 General utilities.
 '''
-__all__ = ['np', 'pd', 'os', 'reload', 'set_trace', 'path_schema_default', 'cumhist', 'talk', 'rcol']
+__all__ = ['np', 'pd', 'os', 'reload', 'set_trace', 'path_schema_default', 'cumhist', 'talk', 'rcol', 'abspath']
 
 import os
 import pandas as pd

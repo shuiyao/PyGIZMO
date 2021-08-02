@@ -33,10 +33,16 @@ class Simulation(object):
                a      zred
     0    0.03226  29.99997
     1    0.04762  20.00002
+    2    0.06250  15.00000
+    3    0.06667  13.99999
+    4    0.07143  12.99999
     ..       ...       ...
+    104  0.90909   0.10000
+    105  0.93023   0.07500
+    106  0.95238   0.05000
     107  0.97561   0.02500
     108  1.00000   0.00000
-    
+    <BLANKLINE>
     [109 rows x 2 columns]
     '''
     
@@ -75,6 +81,7 @@ class Simulation(object):
         '''
         Load the correspondence between snapnum and redshift and cosmic time.
         '''
+        fredz = abspath(fredz)
         df_redz = pd.read_csv(fredz, sep='\s+', header=0)
         df_redz = df_redz.drop("snapnum", axis=1)
         return df_redz

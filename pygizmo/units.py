@@ -13,9 +13,31 @@ class Units(object):
     '''
     Example
     -------
-    u_tipsy = UnitsTipsy(lbox_in_mpc=50)
-    u_astro = UnitsDefault()
-    mass_physical = mass_tipsy * u_tipsy.m / u_astro.m
+    >>> u_tipsy = UnitsTipsy(lbox_in_mpc=50, hubble_param=0.7)
+    >>> print(u_tipsy.keys())
+    ['length', 'mass', 'time', 'velocity', 'density', 'energy', 'magneticfield']
+    >>> print("Boxsize in Mpc:", u_tipsy.boxsize)
+    Boxsize in Mpc: 50
+
+    >>> print("Unit Mass in TIPSY format: ", u_tipsy.get_unit('mass'))
+    Unit Mass in TIPSY format:  9.857107042543447e+49
+
+    >>> u_astro = UnitsDefault()
+
+    >>> mass_tipsy = 1.e-12
+    >>> mass_physical = mass_tipsy * u_tipsy.get_unit('mass') / u_astro.get_unit('mass')
+    >>> print(mass_physical)
+    49558.10478905705
+
+    >>> u_gizmo = UnitsGIZMO(0.7, a=1.0)
+    >>> u_gizmo.comoving
+    True
+    >>> u_gizmo.comoving_to_physical()
+    >>> print("Unit Length at a = 0.0: ", u_gizmo.get_unit('length'))
+    Unit Length at a = 0.0:  4.408111428571429e+21
+    >>> u_gizmo.update_redshift(1.0)
+    >>> print("Unit Length at z = 1.0: ", u_gizmo.get_unit('length'))
+    Unit Length at z = 1.0:  2.2040557142857144e+21
     '''
     
     def __init__(self, config=SimConfig()):
@@ -140,16 +162,20 @@ class UnitsComoving(Units):
 
     def update_atime(self, a):
         self.__class__._validate_input(a)
-        self.comoving_to_physical()
-        self.physical_to_comoving(a)
-        self.a = a
-        self.z = 1./a - 1.
+        if not self._comoving:
+            self.physical_to_comoving()
+            self.a = a
+            self.z = 1./a - 1.
+            self.comoving_to_physical()
+        else:
+            self.a = a
+            self.z = 1./a - 1.
 
     def update_redshift(self, z):
         self.__class__._validate_input(z)
         self.update_atime(1./(z + 1.))
 
-    def comoving_to_physical():
+    def comoving_to_physical(self):
         if(not self._comoving):
             return
         self.l = self.l * self.a
@@ -158,7 +184,7 @@ class UnitsComoving(Units):
         self._comoving = False
         self._update_units()        
 
-    def physical_to_comoving():
+    def physical_to_comoving(self):
         if(self._comoving):
             return
         self.l = self.l / self.a
@@ -239,13 +265,13 @@ class UnitsTipsy(UnitsComoving):
         '''
         Parameters
         ----------
+        lbox_in_mpc: float.
+          The box length in Mpc.
+          Required for unit conversion with the tipsy system.
         hubble_param: float.
           The hubble constant of the Universe is hubble_param * 100 km/s/Mpc
         a: float. Default: 1.0
           The scale factor of the Universe. Related to redshift as a = 1/(1+z)
-        lbox_in_mpc: float.
-          The box length in Mpc.
-          Required for unit conversion with the tipsy system.
         '''
 
         if(a is None and z is None):

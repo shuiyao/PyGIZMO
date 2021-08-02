@@ -14,17 +14,21 @@ class SimConfig():
 
     Example
     -------
-    >>> from config import SimConfig
     >>> cfg = SimConfig()
+
     >>> cfg.sections()
-    ['DEFAULT', 'Paths', 'Schema', 'Verbose', 'Units', 'Cosmology', 'Default', 
-    'Simulation', 'Ions', 'Zsolar', 'HDF5Fields', 'HDF5ParticleTypes', 
-    'Derived']
+    ['DEFAULT', 'Paths', 'Schema', 'Verbose', 'Units', 'Cosmology', 'Default', 'Simulation', 'Ions', 'Zsolar', 'HDF5Fields', 'HDF5ParticleTypes', 'Derived']
+
     >>> cfg.keys('Simulation')
     ['snapnum_reference', 'n_metals', 'elements']
+
     >>> cfg.get('Simulation', 'elements')
     'Z,Y,C,N,O,Ne,Mg,Si,S,Ca,Fe'
+
+    >>> cfg.get_path('Schema', 'HDF5')
+    '/home/shuiyao/codes/pygizmo/pygizmo/data/HDF5schema.csv'
     '''
+
     def __init__(self, path_config=None):
         if(path_config is None):
             self._path = os.path.join(os.path.dirname(__file__),
