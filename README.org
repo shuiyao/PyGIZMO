@@ -61,7 +61,7 @@ This *jupyter notebook* demonstrates several basic and advanced user cases of th
 >>> from pygizmo.snapshot import Snapshot
 >>> model = "l25n144-test"
 >>> snap = Snapshot(model, 98)
-Snapshot: l25n144-test, snapnum: 108
+Snapshot: l25n144-test, snapnum: 98
 >>> snap.redshift
 0.2500000073365194
 >>> snap.cosmology
